@@ -38,10 +38,12 @@ def create_app() -> FastAPI:
         return {"status": "ok", "service": "tazala"}
 
     from app.auth.router import router as auth_router
+    from app.cleaner.router import router as cleaner_router
     from app.scanner.router import router as scanner_router
 
     app.include_router(auth_router)
     app.include_router(scanner_router)
+    app.include_router(cleaner_router)
 
     return app
 
