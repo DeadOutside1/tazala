@@ -20,8 +20,10 @@ from redis.asyncio import Redis
 
 from app.auth.schemas import AuthState
 from app.auth.service import QRAuthService
+from app.bot.i18n.manager import i18n
 from app.bot.keyboards import (
     get_diagnostic_kb,
+    get_language_kb,
     get_scan_kb,
     get_start_kb,
     get_wrapped_kb,
@@ -51,47 +53,84 @@ def _get_redis(redis_instance: Redis | None = None) -> Redis:
     return Redis.from_url(settings.REDIS_URL, decode_responses=False)
 
 
-# --- A. /start & /help Handlers ---
+# --- A. /start, /help, /lang & Language Switching Handlers ---
 
 
 @router.message(CommandStart())
 @router.message(Command("help"))
-async def cmd_start(message: Message, state: FSMContext) -> None:
+async def cmd_start(message: Message, state: FSMContext, lang: str = "ru") -> None:
     """Welcome user and explain Tazala mission."""
     await state.clear()
-    text = (
-        "🧘 **Добро пожаловать в Tazala!**\n\n"
-        "Твой персональный инструмент для **инфо-детокса в Telegram**:\n"
-        "• 🧹 Сброс 100k+ непрочитанных за секунды\n"
-        "• 📁 Автоматическая сортировка по смарт-папкам\n"
-        "• 🎁 Вирусная Wrapped-карточка в стиле Spotify\n"
-        "• 🔒 **Zero-Knowledge**: вход через QR, сессия уничтожается сразу после очистки\n\n"
-        "Нажмите кнопку ниже, чтобы начать очистку!"
-    )
-    await message.answer(text, reply_markup=get_start_kb(), parse_mode="Markdown")
+    text = i18n.get_text("start_welcome", lang=lang)
+    await message.answer(text, reply_markup=get_start_kb(lang=lang), parse_mode="Markdown")
+
+
+@router.message(Command("lang"))
+@router.callback_query(F.data == "choose_lang")
+async def cmd_choose_lang(
+    event: Message | CallbackQuery,
+    lang: str = "ru",
+) -> None:
+    """Prompt user to select interface language."""
+    text = i18n.get_text("select_language", lang=lang)
+    kb = get_language_kb()
+    if isinstance(event, CallbackQuery):
+        if event.message:
+            await event.message.edit_text(text, reply_markup=kb)
+        await event.answer()
+    else:
+        await event.answer(text, reply_markup=kb)
+
+
+@router.callback_query(F.data.startswith("set_lang:"))
+async def cb_set_lang(
+    callback: CallbackQuery,
+    state: FSMContext,
+    redis: Redis | None = None,
+) -> None:
+    """Save selected language preference in Redis and show updated start menu."""
+    new_lang = callback.data.split(":", 1)[1] if callback.data else "ru"
+    if new_lang not in ("ru", "kk", "en"):
+        new_lang = "ru"
+
+    user_id = callback.from_user.id if callback.from_user else 0
+    r = _get_redis(redis)
+    if user_id:
+        await i18n.set_user_language(r, user_id, new_lang)
+
+    confirm_text = i18n.get_text("lang_changed", lang=new_lang)
+    await callback.answer(confirm_text)
+
+    welcome_text = i18n.get_text("start_welcome", lang=new_lang)
+    if callback.message:
+        await callback.message.edit_text(
+            f"{confirm_text}\n\n{welcome_text}",
+            reply_markup=get_start_kb(lang=new_lang),
+            parse_mode="Markdown",
+        )
 
 
 # --- B. About Security ---
 
 
 @router.callback_query(F.data == "about_security")
-async def cb_about_security(callback: CallbackQuery) -> None:
+async def cb_about_security(callback: CallbackQuery, lang: str = "ru") -> None:
     """Provide transparent details on Zero-Knowledge security."""
-    text = (
-        "🔒 **Как устроена безопасность в Tazala:**\n\n"
-        "1. **Вход по QR-коду:** Никаких паролей и номеров телефонов.\n"
-        "2. **Оперативная память (RAM):** Строка сессии хранится исключительно в Redis "
-        "с TTL 5 минут. Ни одного байта не записывается на диск.\n"
-        "3. **Физическое уничтожение:** Сразу после очистки вызывается `log_out()`, "
-        "что отзывает ключ авторизации на серверах самого Telegram.\n"
-        "4. **Open Source:** Весь код открыт для аудита: "
-        "https://github.com/DeadOutside1/tazala\n\n"
-        "Готовы навести порядок?"
-    )
+    text = i18n.get_text("security_info", lang=lang)
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🔑 Войти по QR-коду", callback_data="start_auth")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_start")],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_start_auth", lang=lang),
+                    callback_data="start_auth",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_back", lang=lang),
+                    callback_data="back_to_start",
+                )
+            ],
         ]
     )
     if callback.message:
@@ -100,16 +139,20 @@ async def cb_about_security(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data == "back_to_start")
-async def cb_back_to_start(callback: CallbackQuery, state: FSMContext) -> None:
+async def cb_back_to_start(
+    callback: CallbackQuery,
+    state: FSMContext,
+    lang: str = "ru",
+) -> None:
     """Return to start menu."""
     await state.clear()
-    text = (
-        "🧘 **Tazala — Инфо-детокс Telegram**\n\n"
-        "Очистите свой мессенджер от информационного шума:"
-    )
+    text = i18n.get_text("start_welcome", lang=lang)
     if callback.message:
-        await callback.message.edit_text(text, reply_markup=get_start_kb(), parse_mode="Markdown")
+        await callback.message.edit_text(
+            text, reply_markup=get_start_kb(lang=lang), parse_mode="Markdown"
+        )
     await callback.answer()
+
 
 
 # --- C. QR Authentication Flow ---
@@ -120,6 +163,7 @@ async def cb_start_auth(
     callback: CallbackQuery,
     state: FSMContext,
     redis: Redis | None = None,
+    lang: str = "ru",
 ) -> None:
     """Initiate Telethon QR login flow."""
     session_id = str(uuid.uuid4())
@@ -135,7 +179,7 @@ async def cb_start_auth(
     _ACTIVE_AUTH_CLIENTS[session_id] = client
 
     if callback.message:
-        status_msg = await callback.message.answer("⏳ Генерация защищенного QR-кода...")
+        status_msg = await callback.message.answer(i18n.get_text("qr_generating", lang=lang))
     else:
         status_msg = None
     await callback.answer()
@@ -144,13 +188,7 @@ async def cb_start_auth(
 
     async def on_qr(url: str, png_bytes: bytes) -> None:
         nonlocal qr_message
-        caption = (
-            "📲 **Отсканируйте QR-код для входа:**\n\n"
-            "1. Откройте **Telegram** на телефоне\n"
-            "2. Перейдите в **Настройки ➔ Устройства ➔ Подключить устройство**\n"
-            "3. Наведите камеру на этот QR-код\n\n"
-            "_Код обновляется автоматически каждые 25 секунд._"
-        )
+        caption = i18n.get_text("qr_caption", lang=lang)
         file = BufferedInputFile(png_bytes, filename="tazala_qr.png")
         if qr_message is None and callback.message:
             qr_message = await callback.message.answer_photo(
@@ -176,9 +214,7 @@ async def cb_start_auth(
             await state.set_state(AuthSG.waiting_2fa_password)
             if callback.message:
                 await callback.message.answer(
-                    "🔒 **Ваш аккаунт защищен 2FA.**\n\n"
-                    "Пожалуйста, пришлите ваш облачный пароль сообщением в этот чат.\n"
-                    "_(Сообщение с паролем будет немедленно удалено из чата)_",
+                    i18n.get_text("two_fa_prompt", lang=lang),
                     parse_mode="Markdown",
                 )
 
@@ -195,17 +231,13 @@ async def cb_start_auth(
                 await state.set_state(AppSG.authenticated)
                 if callback.message:
                     await callback.message.answer(
-                        "✅ **Вы успешно вошли в аккаунт!**\n\n"
-                        "Сессия защищена в памяти Redis. Нажмите кнопку ниже, чтобы "
-                        "просканировать завал в Telegram:",
-                        reply_markup=get_scan_kb(),
+                        i18n.get_text("qr_authenticated", lang=lang),
+                        reply_markup=get_scan_kb(lang=lang),
                         parse_mode="Markdown",
                     )
             elif result.state == AuthState.EXPIRED:
                 if callback.message:
-                    await callback.message.answer(
-                        "⏱ Время действия QR-кода истекло. Начните заново: /start"
-                    )
+                    await callback.message.answer(i18n.get_text("qr_expired", lang=lang))
         except Exception as err:
             logger.exception("Auth task error: %s", err)
         finally:
@@ -219,6 +251,7 @@ async def msg_2fa_password(
     message: Message,
     state: FSMContext,
     redis: Redis | None = None,
+    lang: str = "ru",
 ) -> None:
     """Safely receive 2FA cloud password and complete authentication."""
     password = message.text or ""
@@ -233,7 +266,7 @@ async def msg_2fa_password(
     client = _ACTIVE_AUTH_CLIENTS.get(session_id)
 
     if not client:
-        await message.answer("Сессия авторизации устарела. Пожалуйста, отправьте /start.")
+        await message.answer(i18n.get_text("session_not_found", lang=lang))
         await state.clear()
         return
 
@@ -244,16 +277,12 @@ async def msg_2fa_password(
     if result.state == AuthState.AUTHENTICATED:
         await state.set_state(AppSG.authenticated)
         await message.answer(
-            "✅ **Пароль 2FA принят!**\n\n"
-            "Вы успешно вошли. Запустите диагностику цифрового завала:",
-            reply_markup=get_scan_kb(),
+            i18n.get_text("two_fa_success", lang=lang),
+            reply_markup=get_scan_kb(lang=lang),
             parse_mode="Markdown",
         )
     else:
-        await message.answer(
-            "❌ **Ошибка 2FA пароля.**\nПожалуйста, отправьте пароль еще раз "
-            "или начните заново: /start"
-        )
+        await message.answer(i18n.get_text("two_fa_error", lang=lang))
 
 
 # --- D. Diagnostics / Scan Flow ---
@@ -264,19 +293,20 @@ async def cb_run_scan(
     callback: CallbackQuery,
     state: FSMContext,
     redis: Redis | None = None,
+    lang: str = "ru",
 ) -> None:
     """Execute account diagnostic scan."""
     data = await state.get_data()
     session_id = data.get("session_id")
     if not session_id:
         if callback.message:
-            await callback.message.answer("Сессия не найдена. Пожалуйста, начните с /start.")
+            await callback.message.answer(i18n.get_text("session_not_found", lang=lang))
         await callback.answer()
         return
 
     await state.set_state(AppSG.scanning)
     status_msg = (
-        await callback.message.answer("🔍 **Начинаем сканирование диалогов...**")
+        await callback.message.answer(i18n.get_text("scan_starting", lang=lang))
         if callback.message
         else None
     )
@@ -287,14 +317,16 @@ async def cb_run_scan(
     client = await session_store.load(session_id)
     if not client:
         if status_msg:
-            await status_msg.edit_text("Сессия истекла. Пожалуйста, начните с /start.")
+            await status_msg.edit_text(i18n.get_text("session_not_found", lang=lang))
         return
 
     editor = ThrottledMessageEditor(status_msg) if status_msg else None
 
     async def on_scan_progress(scanned: int) -> None:
         if editor:
-            await editor.edit_text_safe(f"🔍 Просканировано **{scanned}** диалогов...")
+            await editor.edit_text_safe(
+                i18n.get_text("scan_progress", lang=lang, scanned=scanned)
+            )
 
     scanner = ScannerService()
     try:
@@ -307,32 +339,34 @@ async def cb_run_scan(
 
         # Build diagnostic report
         dead_total = scan_result.dead_count + scan_result.zombie_count
+        unreads_label = "непрочит." if lang == "ru" else "оқылмаған" if lang == "kk" else "unread"
         top_list = "\n".join(
-            f"• {chat.title[:20]}: **{chat.unread_count}** непрочит."
+            f"• {chat.title[:20]}: **{chat.unread_count}** {unreads_label}"
             for chat in scan_result.top_unread_chats[:3]
-        ) or "Нет непрочитанных чатов 🎉"
+        ) or i18n.get_text("no_unread_chats", lang=lang)
 
-        report_text = (
-            "📊 **Результаты диагностики аккаунта:**\n\n"
-            f"💬 Всего диалогов: **{scan_result.total_dialogs}**\n"
-            f"🔴 Непрочитанных сообщений: **{scan_result.total_unread:,}**\n"
-            f"🗑 Неактивных каналов/групп: **{dead_total}** ({scan_result.dead_percentage}%)\n"
-            f"📁 В архиве: **{scan_result.archived_count}**\n\n"
-            f"🏆 **Главные источники завала:**\n{top_list}\n\n"
-            "Выберите желаемый сценарий очистки:"
+        report_text = i18n.get_text(
+            "scan_report",
+            lang=lang,
+            total_dialogs=scan_result.total_dialogs,
+            total_unread=f"{scan_result.total_unread:,}",
+            dead_total=dead_total,
+            dead_percentage=scan_result.dead_percentage,
+            archived_count=scan_result.archived_count,
+            top_list=top_list,
         )
 
         await state.set_state(AppSG.ready_to_clean)
         if status_msg:
             await status_msg.edit_text(
                 report_text,
-                reply_markup=get_diagnostic_kb(scan_result.total_unread),
+                reply_markup=get_diagnostic_kb(scan_result.total_unread, lang=lang),
                 parse_mode="Markdown",
             )
     except Exception as e:
         logger.exception("Scan failed: %s", e)
         if status_msg:
-            await status_msg.edit_text(f"❌ Ошибка сканирования: {e}")
+            await status_msg.edit_text(f"❌ {e}")
     finally:
         try:
             await client.disconnect()
@@ -348,6 +382,7 @@ async def cb_run_clean(
     callback: CallbackQuery,
     state: FSMContext,
     redis: Redis | None = None,
+    lang: str = "ru",
 ) -> None:
     """Execute cleanup actions based on user selection."""
     action = callback.data or ""
@@ -358,7 +393,7 @@ async def cb_run_clean(
     session_id = data.get("session_id")
     if not session_id:
         if callback.message:
-            await callback.message.answer("Сессия не найдена. Отправьте /start.")
+            await callback.message.answer(i18n.get_text("session_not_found", lang=lang))
         await callback.answer()
         return
 
@@ -366,13 +401,13 @@ async def cb_run_clean(
     scan_result = await ScannerService.get_cached_scan(r, session_id)
     if not scan_result:
         if callback.message:
-            await callback.message.answer("Сначала выполните диагностику: /start")
+            await callback.message.answer(i18n.get_text("session_not_found", lang=lang))
         await callback.answer()
         return
 
     await state.set_state(AppSG.cleaning)
     status_msg = (
-        await callback.message.answer("🧹 **Наводим Дзен... Начинаем очистку.**")
+        await callback.message.answer(i18n.get_text("clean_starting", lang=lang))
         if callback.message
         else None
     )
@@ -382,7 +417,7 @@ async def cb_run_clean(
     client = await session_store.load(session_id)
     if not client:
         if status_msg:
-            await status_msg.edit_text("Сессия истекла. Отправьте /start.")
+            await status_msg.edit_text(i18n.get_text("session_not_found", lang=lang))
         return
 
     editor = ThrottledMessageEditor(status_msg) if status_msg else None
@@ -390,7 +425,13 @@ async def cb_run_clean(
     async def on_clean_progress(progress) -> None:
         if editor:
             await editor.edit_text_safe(
-                f"🧹 **{progress.message}** ({progress.current}/{progress.total})..."
+                i18n.get_text(
+                    "clean_progress",
+                    lang=lang,
+                    message=progress.message,
+                    current=progress.current,
+                    total=progress.total,
+                )
             )
 
     cleaner = CleanerService()
@@ -407,32 +448,33 @@ async def cb_run_clean(
             config=config,
             session_store=session_store,
             progress_callback=on_clean_progress,
+            lang=lang,
         )
 
         # Generate Wrapped Stats & Card
         uname = callback.from_user.username if callback.from_user else None
         stats = WrappedService.calculate_wrapped_stats(
-            scan_result, clean_result=clean_result, username=uname
+            scan_result, clean_result=clean_result, username=uname, lang=lang
         )
         await WrappedService.save_wrapped(r, stats)
 
-        card_png = WrappedService().generate_wrapped_card(stats)
+        card_png = WrappedService().generate_wrapped_card(stats, lang=lang)
         file = BufferedInputFile(card_png, filename="tazala_wrapped.png")
 
-        caption = (
-            "🧘 **Дзен достигнут!**\n\n"
-            f"Твой архетип: **{stats.archetype_title}**\n"
-            f"🧹 Очищено сообщений: **{stats.messages_cleared:,}**\n"
-            f"⏳ Сэкономлено: **{stats.time_saved_hours} ч.**\n"
-            f"⭐ Zen Score: **{stats.zen_score} / 100**\n\n"
-            "Поделитесь карточкой с друзьями или завершите сессию:"
+        caption = i18n.get_text(
+            "wrapped_caption",
+            lang=lang,
+            archetype=stats.archetype_title,
+            messages=f"{stats.messages_cleared:,}",
+            hours=stats.time_saved_hours,
+            score=stats.zen_score,
         )
 
         if callback.message:
             await callback.message.answer_photo(
                 photo=file,
                 caption=caption,
-                reply_markup=get_wrapped_kb(session_id),
+                reply_markup=get_wrapped_kb(session_id, lang=lang),
                 parse_mode="Markdown",
             )
             if status_msg:
@@ -443,7 +485,7 @@ async def cb_run_clean(
     except Exception as e:
         logger.exception("Cleanup failed: %s", e)
         if status_msg:
-            await status_msg.edit_text(f"❌ Ошибка очистки: {e}")
+            await status_msg.edit_text(f"❌ {e}")
     finally:
         try:
             await client.disconnect()
@@ -459,6 +501,7 @@ async def cb_session_logout(
     callback: CallbackQuery,
     state: FSMContext,
     redis: Redis | None = None,
+    lang: str = "ru",
 ) -> None:
     """Completely destroy session and revoke keys on Telegram servers."""
     data = await state.get_data()
@@ -471,12 +514,8 @@ async def cb_session_logout(
         client = await session_store.load(session_id)
         await session_store.destroy(session_id, client)
 
-    text = (
-        "🔒 **Сессия успешно уничтожена!**\n\n"
-        "• Ключ авторизации отозван на серверах Telegram (`log_out`)\n"
-        "• Временная сессия удалена из памяти Redis\n\n"
-        "Ваш аккаунт в полной безопасности. Чтобы начать заново — отправьте /start."
-    )
+    text = i18n.get_text("logout_confirmed", lang=lang)
     if callback.message:
         await callback.message.answer(text, parse_mode="Markdown")
     await callback.answer()
+

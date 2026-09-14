@@ -8,6 +8,7 @@ import logging
 from PIL import Image, ImageDraw, ImageFont
 from redis.asyncio import Redis
 
+from app.bot.i18n.manager import i18n
 from app.cleaner.schemas import CleanResult
 from app.scanner.schemas import ScanResult
 from app.wrapped.schemas import WrappedStats, ZenArchetype
@@ -32,6 +33,7 @@ class WrappedService:
         scan_result: ScanResult,
         clean_result: CleanResult | None = None,
         username: str | None = None,
+        lang: str = "ru",
     ) -> WrappedStats:
         """
         Calculate metrics, time saved, Zen Score, and determine behavioral archetype.
@@ -53,20 +55,14 @@ class WrappedService:
         # Archetype determination
         if messages_cleared > 20000 or scan_result.dead_percentage > 60:
             archetype = ZenArchetype.DIGITAL_HOARDER
-            title = "Цифровой плюшкин"
-            description = "Копил каналы годами. Пришло время отпустить."
         elif messages_cleared > 5000 or scan_result.dead_percentage > 35:
             archetype = ZenArchetype.CHAOS_LORD
-            title = "Повелитель хаоса"
-            description = "Красный бейдж Telegram управлял твоей жизнью."
         elif messages_cleared > 500:
             archetype = ZenArchetype.INFO_COLLECTOR
-            title = "Инфо-коллекционер"
-            description = "Любишь читать, но лента победила."
         else:
             archetype = ZenArchetype.DIGITAL_MONK
-            title = "Цифровой монах"
-            description = "Абсолютный дзен и контроль над входящими."
+
+        title, description = i18n.get_archetype_info(archetype.value, lang=lang)
 
         top_source = (
             scan_result.top_unread_chats[0].title
@@ -106,13 +102,48 @@ class WrappedService:
                 continue
         return ImageFont.load_default()
 
-    def generate_wrapped_card(self, stats: WrappedStats) -> bytes:
+    def generate_wrapped_card(self, stats: WrappedStats, lang: str = "ru") -> bytes:
         """
         Generate high-resolution 1080x1350 vertical Spotify Wrapped-style card.
         """
         width, height = 1080, 1350
         image = Image.new("RGB", (width, height), BG_COLOR)
         draw = ImageDraw.Draw(image)
+
+        # Multilingual labels mapping
+        labels_map = {
+            "ru": {
+                "subtitle": "ИТОГИ ИНФО-ДЕТОКСА",
+                "default_user": "Личный отчет",
+                "unreads": "Обнулено",
+                "time": "Сэкономлено",
+                "dead": "Мёртвых чатов",
+                "folders": "Смарт-папок",
+                "time_unit": "ч",
+                "footer": "Очисти свой Telegram: @TazalaBot",
+            },
+            "kk": {
+                "subtitle": "ЦИФРЛЫҚ ТАЗАРТУ",
+                "default_user": "Жеке есеп",
+                "unreads": "Тазартылды",
+                "time": "Үнемделді",
+                "dead": "Өлі чаттар",
+                "folders": "Смарт-папка",
+                "time_unit": "сағ",
+                "footer": "Telegram-ды тазарт: @TazalaBot",
+            },
+            "en": {
+                "subtitle": "DIGITAL DETOX REPORT",
+                "default_user": "Personal report",
+                "unreads": "Cleared",
+                "time": "Saved",
+                "dead": "Dead chats",
+                "folders": "Folders",
+                "time_unit": "h",
+                "footer": "Clean your Telegram: @TazalaBot",
+            },
+        }
+        loc = labels_map.get(lang) or labels_map["ru"]
 
         # 1. Glowing decorative background accents
         overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
@@ -130,9 +161,9 @@ class WrappedService:
         user_font = self._load_font(28, bold=True)
 
         draw.text((80, 70), "TAZALA WRAPPED", fill=NEON_MINT, font=title_font)
-        draw.text((80, 135), "ИТОГИ ИНФО-ДЕТОКСА", fill=MUTED_GRAY, font=sub_font)
+        draw.text((80, 135), loc["subtitle"], fill=MUTED_GRAY, font=sub_font)
 
-        handle = f"@{stats.username}" if stats.username else "Личный отчет"
+        handle = f"@{stats.username}" if stats.username else loc["default_user"]
         draw.text((80, 185), handle, fill=SOFT_WHITE, font=user_font)
 
         # 3. Central Archetype Card
@@ -143,7 +174,8 @@ class WrappedService:
         arch_sub_font = self._load_font(26, bold=False)
         score_font = self._load_font(30, bold=True)
 
-        badge_text = f"🧘 {stats.archetype_title.upper()}"
+        arch_title, arch_desc = i18n.get_archetype_info(stats.archetype.value, lang=lang)
+        badge_text = f"🧘 {arch_title.upper()}"
         draw.text((120, 295), badge_text, fill=NEON_MINT, font=arch_title_font)
 
         # Zen Score and Bar
@@ -166,7 +198,7 @@ class WrappedService:
             )
 
         # Description
-        draw.text((120, 475), stats.archetype_description, fill=SOFT_WHITE, font=arch_sub_font)
+        draw.text((120, 475), arch_desc, fill=SOFT_WHITE, font=arch_sub_font)
 
         # 4. 2x2 Metric Tiles Grid
         tile_num_font = self._load_font(56, bold=True)
@@ -176,25 +208,25 @@ class WrappedService:
             (
                 [80, 640, 520, 890],
                 f"{stats.messages_cleared:,}",
-                "Непрочитанных обнулено",
+                loc["unreads"],
                 NEON_MINT,
             ),
             (
                 [560, 640, 1000, 890],
-                f"{stats.time_saved_hours} ч",
-                "Времени сэкономлено",
+                f"{stats.time_saved_hours} {loc['time_unit']}",
+                loc["time"],
                 CYBER_CYAN,
             ),
             (
                 [80, 930, 520, 1180],
                 str(stats.dead_chats_count),
-                "Мёртвых чатов в архиве",
+                loc["dead"],
                 SOFT_WHITE,
             ),
             (
                 [560, 930, 1000, 1180],
                 str(stats.folders_created_count),
-                "Смарт-папок создано",
+                loc["folders"],
                 NEON_MINT,
             ),
         ]
@@ -208,7 +240,7 @@ class WrappedService:
 
         # 5. Footer
         footer_font = self._load_font(26, bold=True)
-        footer_text = "Очисти свой Telegram: @TazalaBot"
+        footer_text = loc["footer"]
         draw.text((width // 2 - 220, 1240), footer_text, fill=CYBER_CYAN, font=footer_font)
 
         # Save to buffer

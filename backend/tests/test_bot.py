@@ -29,11 +29,13 @@ from app.config import settings
 
 
 def test_start_keyboard_structure():
-    """Test get_start_kb contains auth and security buttons."""
+    """Test get_start_kb contains auth, security, and language selection buttons."""
     kb = get_start_kb()
-    assert len(kb.inline_keyboard) == 2
+    assert len(kb.inline_keyboard) == 3
     assert kb.inline_keyboard[0][0].callback_data == "start_auth"
     assert kb.inline_keyboard[1][0].callback_data == "about_security"
+    assert kb.inline_keyboard[2][0].callback_data == "choose_lang"
+
 
 
 def test_scan_keyboard_structure():

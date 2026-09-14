@@ -10,6 +10,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from redis.asyncio import Redis
 
 from app.bot.handlers import router as bot_router
+from app.bot.i18n.middleware import LanguageMiddleware
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,11 @@ def create_bot_and_dispatcher(
     if redis is not None:
         dp["redis"] = redis
 
+    # Register i18n middleware
+    dp.message.middleware(LanguageMiddleware())
+    dp.callback_query.middleware(LanguageMiddleware())
+
     dp.include_router(bot_router)
     logger.info("Telegram Bot and Dispatcher initialized successfully.")
     return bot, dp
+

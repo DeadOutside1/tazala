@@ -16,37 +16,98 @@ from app.telegram.throttle import FloodSafeExecutor
 
 logger = logging.getLogger(__name__)
 
-# Default smart folder presets strictly conforming to Telegram <= 12 characters rule
-SMART_FOLDER_PRESETS = [
-    FolderRule(
-        title="💼 Работа",
-        emoji="💼",
-        categories=[ChatType.CHANNEL, ChatType.GROUP],
-        keywords=["work", "job", "hr", "dev", "code", "it", "qa"],
-    ),
-    FolderRule(
-        title="📰 Новости",
-        emoji="📰",
-        categories=[ChatType.CHANNEL],
-        keywords=["news", "media", "digest", "инфо", "новости"],
-    ),
-    FolderRule(
-        title="💬 Личные",
-        emoji="💬",
-        categories=[ChatType.USER],
-        keywords=[],
-    ),
-    FolderRule(
-        title="🗑 Мёртвые",
-        emoji="🗑",
-        categories=[],
-        keywords=[],
-    ),
-]
+def get_smart_folder_presets(lang: str = "ru") -> list[FolderRule]:
+    """Return smart folder rules tailored to user language (strictly <= 12 chars)."""
+    if lang == "kk":
+        return [
+            FolderRule(
+                title="💼 Жұмыс",
+                emoji="💼",
+                categories=[ChatType.CHANNEL, ChatType.GROUP],
+                keywords=["work", "job", "hr", "dev", "code", "it", "qa", "жұмыс", "қызмет"],
+            ),
+            FolderRule(
+                title="📰 Жаңалық",
+                emoji="📰",
+                categories=[ChatType.CHANNEL],
+                keywords=["news", "media", "digest", "жаңалық", "хабар", "ақпарат"],
+            ),
+            FolderRule(
+                title="💬 Жеке",
+                emoji="💬",
+                categories=[ChatType.USER],
+                keywords=[],
+            ),
+            FolderRule(
+                title="🗑 Өлі чаттар",
+                emoji="🗑",
+                categories=[],
+                keywords=[],
+            ),
+        ]
+    if lang == "en":
+        return [
+            FolderRule(
+                title="💼 Work",
+                emoji="💼",
+                categories=[ChatType.CHANNEL, ChatType.GROUP],
+                keywords=["work", "job", "hr", "dev", "code", "it", "qa"],
+            ),
+            FolderRule(
+                title="📰 News",
+                emoji="📰",
+                categories=[ChatType.CHANNEL],
+                keywords=["news", "media", "digest", "daily", "times"],
+            ),
+            FolderRule(
+                title="💬 Personal",
+                emoji="💬",
+                categories=[ChatType.USER],
+                keywords=[],
+            ),
+            FolderRule(
+                title="🗑 Inactive",
+                emoji="🗑",
+                categories=[],
+                keywords=[],
+            ),
+        ]
+    # Default: ru
+    return [
+        FolderRule(
+            title="💼 Работа",
+            emoji="💼",
+            categories=[ChatType.CHANNEL, ChatType.GROUP],
+            keywords=["work", "job", "hr", "dev", "code", "it", "qa", "работа"],
+        ),
+        FolderRule(
+            title="📰 Новости",
+            emoji="📰",
+            categories=[ChatType.CHANNEL],
+            keywords=["news", "media", "digest", "инфо", "новости"],
+        ),
+        FolderRule(
+            title="💬 Личные",
+            emoji="💬",
+            categories=[ChatType.USER],
+            keywords=[],
+        ),
+        FolderRule(
+            title="🗑 Мёртвые",
+            emoji="🗑",
+            categories=[],
+            keywords=[],
+        ),
+    ]
+
+
+SMART_FOLDER_PRESETS = get_smart_folder_presets("ru")
 
 
 class CleanerService:
     """Orchestrates account cleanup: batch read acknowledgment and folder organization."""
+
+    get_smart_folder_presets = staticmethod(get_smart_folder_presets)
 
     async def mark_all_as_read(
         self,
@@ -102,6 +163,7 @@ class CleanerService:
         dialogs: list[DialogInfo],
         progress_callback: Callable[[CleanProgress], Awaitable[None]] | None = None,
         session_id: str = "",
+        lang: str = "ru",
     ) -> list[str]:
         """
         Create categorized smart folders up to Telegram limits without overriding user folders.
@@ -126,9 +188,10 @@ class CleanerService:
 
         # Available folder IDs between 2 and 10 (0 and 1 are reserved)
         available_ids = [fid for fid in range(2, 11) if fid not in used_ids]
-        total_presets = len(SMART_FOLDER_PRESETS)
+        presets = get_smart_folder_presets(lang)
+        total_presets = len(presets)
 
-        for rule in SMART_FOLDER_PRESETS:
+        for rule in presets:
             if not available_ids:
                 logger.info("No free folder slots remaining (max 10).")
                 break
@@ -140,13 +203,13 @@ class CleanerService:
             # Identify matching dialogs
             matching: list[DialogInfo] = []
             for d in dialogs:
-                if rule.title == "🗑 Мёртвые":
+                if rule.emoji == "🗑":
                     if d.status in (ChatStatus.DEAD, ChatStatus.ZOMBIE):
                         matching.append(d)
-                elif rule.title == "💬 Личные":
+                elif rule.emoji == "💬":
                     if d.type == ChatType.USER:
                         matching.append(d)
-                elif rule.title in ("💼 Работа", "📰 Новости"):
+                elif rule.emoji in ("💼", "📰"):
                     if d.type in rule.categories:
                         title_lower = d.title.lower()
                         if any(kw in title_lower for kw in rule.keywords):
@@ -213,6 +276,7 @@ class CleanerService:
         config: CleanConfig,
         session_store: SessionStore,
         progress_callback: Callable[[CleanProgress], Awaitable[None]] | None = None,
+        lang: str = "ru",
     ) -> CleanResult:
         """Main orchestrator for the Zen Cleanup pipeline."""
         loop = asyncio.get_running_loop()
@@ -237,6 +301,7 @@ class CleanerService:
                 dialogs=scan_result.dialogs,
                 progress_callback=progress_callback,
                 session_id=sid,
+                lang=lang,
             )
 
         session_destroyed = False

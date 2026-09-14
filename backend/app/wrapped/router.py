@@ -14,7 +14,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/wrapped", tags=["wrapped"])
 
 
-async def _get_or_compute_wrapped(request: Request, session_id: str) -> WrappedStats:
+async def _get_or_compute_wrapped(
+    request: Request, session_id: str, lang: str = "ru"
+) -> WrappedStats:
     """Helper to fetch cached WrappedStats or compute them from cached scan result."""
     redis = getattr(request.app.state, "redis", None)
     if not redis:
@@ -37,25 +39,30 @@ async def _get_or_compute_wrapped(request: Request, session_id: str) -> WrappedS
         )
 
     wrapped_service = WrappedService()
-    stats = wrapped_service.calculate_wrapped_stats(scan_result)
+    stats = wrapped_service.calculate_wrapped_stats(scan_result, lang=lang)
     await wrapped_service.save_wrapped(redis, stats)
     return stats
 
 
 @router.get("/{session_id}", response_model=WrappedStats)
-async def get_wrapped_stats(request: Request, session_id: str) -> WrappedStats:
+async def get_wrapped_stats(
+    request: Request, session_id: str, lang: str = "ru"
+) -> WrappedStats:
     """Get JSON summary of user's detox analytics, archetype, and Zen Score."""
-    return await _get_or_compute_wrapped(request, session_id)
+    return await _get_or_compute_wrapped(request, session_id, lang=lang)
 
 
 @router.get("/{session_id}/card.png")
-async def get_wrapped_card(request: Request, session_id: str) -> Response:
+async def get_wrapped_card(
+    request: Request, session_id: str, lang: str = "ru"
+) -> Response:
     """Generate and return 1080x1350 PNG image card ready for sharing."""
-    stats = await _get_or_compute_wrapped(request, session_id)
+    stats = await _get_or_compute_wrapped(request, session_id, lang=lang)
     wrapped_service = WrappedService()
-    png_bytes = wrapped_service.generate_wrapped_card(stats)
+    png_bytes = wrapped_service.generate_wrapped_card(stats, lang=lang)
     return Response(
         content=png_bytes,
         media_type="image/png",
         headers={"Cache-Control": "public, max-age=3600"},
     )
+
