@@ -35,6 +35,7 @@ from app.cleaner.service import CleanerService
 from app.config import settings
 from app.scanner.service import ScannerService
 from app.telegram.client_manager import ClientManager
+from app.telegram.lock import RedisLock
 from app.telegram.session_store import SessionStore
 from app.wrapped.service import WrappedService
 
@@ -296,82 +297,94 @@ async def cb_run_scan(
     lang: str = "ru",
 ) -> None:
     """Execute account diagnostic scan."""
-    data = await state.get_data()
-    session_id = data.get("session_id")
-    if not session_id:
-        if callback.message:
-            await callback.message.answer(i18n.get_text("session_not_found", lang=lang))
-        await callback.answer()
-        return
-
-    await state.set_state(AppSG.scanning)
-    status_msg = (
-        await callback.message.answer(i18n.get_text("scan_starting", lang=lang))
-        if callback.message
-        else None
-    )
-    await callback.answer()
-
+    user_id = callback.from_user.id if callback.from_user else 0
     r = _get_redis(redis)
-    session_store = SessionStore(r)
-    client = await session_store.load(session_id)
-    if not client:
-        if status_msg:
-            await status_msg.edit_text(i18n.get_text("session_not_found", lang=lang))
-        return
 
-    editor = ThrottledMessageEditor(status_msg) if status_msg else None
-
-    async def on_scan_progress(scanned: int) -> None:
-        if editor:
-            await editor.edit_text_safe(
-                i18n.get_text("scan_progress", lang=lang, scanned=scanned)
+    async with RedisLock(r, f"scan:{user_id}", timeout=300) as acquired:
+        if not acquired:
+            await callback.answer(
+                i18n.get_text("action_already_running", lang=lang),
+                show_alert=True,
             )
+            return
 
-    scanner = ScannerService()
-    try:
-        scan_result = await scanner.scan_account(
-            client=client,
-            session_id=session_id,
-            progress_callback=on_scan_progress,
+        data = await state.get_data()
+        session_id = data.get("session_id")
+        if not session_id:
+            if callback.message:
+                await callback.message.answer(i18n.get_text("session_not_found", lang=lang))
+            await callback.answer()
+            return
+
+        await state.set_state(AppSG.scanning)
+        status_msg = (
+            await callback.message.answer(i18n.get_text("scan_starting", lang=lang))
+            if callback.message
+            else None
         )
-        await scanner.save_scan_result(r, scan_result)
+        await callback.answer()
 
-        # Build diagnostic report
-        dead_total = scan_result.dead_count + scan_result.zombie_count
-        unreads_label = "непрочит." if lang == "ru" else "оқылмаған" if lang == "kk" else "unread"
-        top_list = "\n".join(
-            f"• {chat.title[:20]}: **{chat.unread_count}** {unreads_label}"
-            for chat in scan_result.top_unread_chats[:3]
-        ) or i18n.get_text("no_unread_chats", lang=lang)
+        session_store = SessionStore(r)
+        client = await session_store.load(session_id)
+        if not client:
+            if status_msg:
+                await status_msg.edit_text(i18n.get_text("session_not_found", lang=lang))
+            return
 
-        report_text = i18n.get_text(
-            "scan_report",
-            lang=lang,
-            total_dialogs=scan_result.total_dialogs,
-            total_unread=f"{scan_result.total_unread:,}",
-            dead_total=dead_total,
-            dead_percentage=scan_result.dead_percentage,
-            archived_count=scan_result.archived_count,
-            top_list=top_list,
-        )
+        editor = ThrottledMessageEditor(status_msg) if status_msg else None
 
-        await state.set_state(AppSG.ready_to_clean)
-        if status_msg:
-            await status_msg.edit_text(
-                report_text,
-                reply_markup=get_diagnostic_kb(scan_result.total_unread, lang=lang),
-                parse_mode="Markdown",
-            )
-    except Exception as e:
-        logger.exception("Scan failed: %s", e)
-        if status_msg:
-            await status_msg.edit_text(f"❌ {e}")
-    finally:
+        async def on_scan_progress(scanned: int) -> None:
+            if editor:
+                await editor.edit_text_safe(
+                    i18n.get_text("scan_progress", lang=lang, scanned=scanned)
+                )
+
+        scanner = ScannerService()
         try:
-            await client.disconnect()
-        except Exception:
-            pass
+            scan_result = await scanner.scan_account(
+                client=client,
+                session_id=session_id,
+                progress_callback=on_scan_progress,
+            )
+            await scanner.save_scan_result(r, scan_result)
+
+            # Build diagnostic report
+            dead_total = scan_result.dead_count + scan_result.zombie_count
+            unreads_label = (
+                "непрочит." if lang == "ru" else "оқылмаған" if lang == "kk" else "unread"
+            )
+            top_list = "\n".join(
+                f"• {chat.title[:20]}: **{chat.unread_count}** {unreads_label}"
+                for chat in scan_result.top_unread_chats[:3]
+            ) or i18n.get_text("no_unread_chats", lang=lang)
+
+            report_text = i18n.get_text(
+                "scan_report",
+                lang=lang,
+                total_dialogs=scan_result.total_dialogs,
+                total_unread=f"{scan_result.total_unread:,}",
+                dead_total=dead_total,
+                dead_percentage=scan_result.dead_percentage,
+                archived_count=scan_result.archived_count,
+                top_list=top_list,
+            )
+
+            await state.set_state(AppSG.ready_to_clean)
+            if status_msg:
+                await status_msg.edit_text(
+                    report_text,
+                    reply_markup=get_diagnostic_kb(scan_result.total_unread, lang=lang),
+                    parse_mode="Markdown",
+                )
+        except Exception as e:
+            logger.exception("Scan failed: %s", e)
+            if status_msg:
+                await status_msg.edit_text(f"❌ {e}")
+        finally:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
 
 
 # --- E. Cleanup / Zen Button Flow ---
@@ -385,112 +398,122 @@ async def cb_run_clean(
     lang: str = "ru",
 ) -> None:
     """Execute cleanup actions based on user selection."""
-    action = callback.data or ""
-    mark_read = "folders_only" not in action
-    create_folders = "read_only" not in action
-
-    data = await state.get_data()
-    session_id = data.get("session_id")
-    if not session_id:
-        if callback.message:
-            await callback.message.answer(i18n.get_text("session_not_found", lang=lang))
-        await callback.answer()
-        return
-
+    user_id = callback.from_user.id if callback.from_user else 0
     r = _get_redis(redis)
-    scan_result = await ScannerService.get_cached_scan(r, session_id)
-    if not scan_result:
-        if callback.message:
-            await callback.message.answer(i18n.get_text("session_not_found", lang=lang))
+
+    async with RedisLock(r, f"clean:{user_id}", timeout=600) as acquired:
+        if not acquired:
+            await callback.answer(
+                i18n.get_text("action_already_running", lang=lang),
+                show_alert=True,
+            )
+            return
+
+        action = callback.data or ""
+        mark_read = "folders_only" not in action
+        create_folders = "read_only" not in action
+
+        data = await state.get_data()
+        session_id = data.get("session_id")
+        if not session_id:
+            if callback.message:
+                await callback.message.answer(i18n.get_text("session_not_found", lang=lang))
+            await callback.answer()
+            return
+
+        scan_result = await ScannerService.get_cached_scan(r, session_id)
+        if not scan_result:
+            if callback.message:
+                await callback.message.answer(i18n.get_text("session_not_found", lang=lang))
+            await callback.answer()
+            return
+
+        await state.set_state(AppSG.cleaning)
+        status_msg = (
+            await callback.message.answer(i18n.get_text("clean_starting", lang=lang))
+            if callback.message
+            else None
+        )
         await callback.answer()
-        return
 
-    await state.set_state(AppSG.cleaning)
-    status_msg = (
-        await callback.message.answer(i18n.get_text("clean_starting", lang=lang))
-        if callback.message
-        else None
-    )
-    await callback.answer()
-
-    session_store = SessionStore(r)
-    client = await session_store.load(session_id)
-    if not client:
-        if status_msg:
-            await status_msg.edit_text(i18n.get_text("session_not_found", lang=lang))
-        return
-
-    editor = ThrottledMessageEditor(status_msg) if status_msg else None
-
-    async def on_clean_progress(progress) -> None:
-        if editor:
-            await editor.edit_text_safe(
-                i18n.get_text(
-                    "clean_progress",
-                    lang=lang,
-                    message=progress.message,
-                    current=progress.current,
-                    total=progress.total,
-                )
-            )
-
-    cleaner = CleanerService()
-    config = CleanConfig(
-        mark_read=mark_read,
-        create_folders=create_folders,
-        auto_logout=False,
-    )
-
-    try:
-        clean_result = await cleaner.execute_zen_clean(
-            client=client,
-            scan_result=scan_result,
-            config=config,
-            session_store=session_store,
-            progress_callback=on_clean_progress,
-            lang=lang,
-        )
-
-        # Generate Wrapped Stats & Card
-        uname = callback.from_user.username if callback.from_user else None
-        stats = WrappedService.calculate_wrapped_stats(
-            scan_result, clean_result=clean_result, username=uname, lang=lang
-        )
-        await WrappedService.save_wrapped(r, stats)
-
-        card_png = WrappedService().generate_wrapped_card(stats, lang=lang)
-        file = BufferedInputFile(card_png, filename="tazala_wrapped.png")
-
-        caption = i18n.get_text(
-            "wrapped_caption",
-            lang=lang,
-            archetype=stats.archetype_title,
-            messages=f"{stats.messages_cleared:,}",
-            hours=stats.time_saved_hours,
-            score=stats.zen_score,
-        )
-
-        if callback.message:
-            await callback.message.answer_photo(
-                photo=file,
-                caption=caption,
-                reply_markup=get_wrapped_kb(session_id, lang=lang),
-                parse_mode="Markdown",
-            )
+        session_store = SessionStore(r)
+        client = await session_store.load(session_id)
+        if not client:
             if status_msg:
-                try:
-                    await status_msg.delete()
-                except Exception:
-                    pass
-    except Exception as e:
-        logger.exception("Cleanup failed: %s", e)
-        if status_msg:
-            await status_msg.edit_text(f"❌ {e}")
-    finally:
+                await status_msg.edit_text(i18n.get_text("session_not_found", lang=lang))
+            return
+
+        editor = ThrottledMessageEditor(status_msg) if status_msg else None
+
+        async def on_clean_progress(progress) -> None:
+            if editor:
+                await editor.edit_text_safe(
+                    i18n.get_text(
+                        "clean_progress",
+                        lang=lang,
+                        message=progress.message,
+                        current=progress.current,
+                        total=progress.total,
+                    )
+                )
+
+        cleaner = CleanerService()
+        config = CleanConfig(
+            mark_read=mark_read,
+            create_folders=create_folders,
+            auto_logout=False,
+        )
+
         try:
-            await client.disconnect()
-        except Exception:
-            pass
+            clean_result = await cleaner.execute_zen_clean(
+                client=client,
+                scan_result=scan_result,
+                config=config,
+                session_store=session_store,
+                progress_callback=on_clean_progress,
+                lang=lang,
+            )
+
+            # Generate Wrapped Stats & Card
+            uname = callback.from_user.username if callback.from_user else None
+            stats = WrappedService.calculate_wrapped_stats(
+                scan_result, clean_result=clean_result, username=uname, lang=lang
+            )
+            await WrappedService.save_wrapped(r, stats)
+
+            card_png = WrappedService().generate_wrapped_card(stats, lang=lang)
+            file = BufferedInputFile(card_png, filename="tazala_wrapped.png")
+
+            caption = i18n.get_text(
+                "wrapped_caption",
+                lang=lang,
+                archetype=stats.archetype_title,
+                messages=f"{stats.messages_cleared:,}",
+                hours=stats.time_saved_hours,
+                score=stats.zen_score,
+            )
+
+            if callback.message:
+                await callback.message.answer_photo(
+                    photo=file,
+                    caption=caption,
+                    reply_markup=get_wrapped_kb(session_id, lang=lang),
+                    parse_mode="Markdown",
+                )
+                if status_msg:
+                    try:
+                        await status_msg.delete()
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.exception("Cleanup failed: %s", e)
+            if status_msg:
+                await status_msg.edit_text(f"❌ {e}")
+        finally:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
 
 
 # --- F. Logout Handler ---

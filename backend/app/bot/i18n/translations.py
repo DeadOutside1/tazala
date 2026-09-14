@@ -217,6 +217,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "kk": "Оқылмаған чаттар жоқ 🎉",
         "en": "No unread chats 🎉",
     },
+    "action_already_running": {
+        "ru": "⏳ Операция уже выполняется, пожалуйста, подождите.",
+        "kk": "⏳ Бұл әрекет қазір орындалуда, күте тұрыңыз.",
+        "en": "⏳ Operation is already in progress, please wait.",
+    },
 
     # --- Cleaning ---
     "clean_starting": {
