@@ -37,9 +37,9 @@ def create_app() -> FastAPI:
     async def health():
         return {"status": "ok", "service": "tazala"}
 
-    # Routers will be included here as modules are developed:
-    # from app.auth.router import router as auth_router
-    # app.include_router(auth_router)
+    from app.auth.router import router as auth_router
+
+    app.include_router(auth_router)
 
     return app
 
