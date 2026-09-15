@@ -15,10 +15,11 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from app.bot.bot import create_bot_and_dispatcher
-from app.bot.handlers import cb_session_logout, cmd_start
+from app.bot.handlers import _format_code_slots, cb_session_logout, cmd_start
 from app.bot.keyboards import (
     get_diagnostic_kb,
     get_scan_kb,
+    get_sms_code_kb,
     get_start_kb,
     get_wrapped_kb,
 )
@@ -26,6 +27,34 @@ from app.bot.utils import ThrottledMessageEditor
 from app.config import settings
 
 # --- 1. Keyboard Tests ---
+
+
+def test_sms_code_numpad_keyboard_structure():
+    """Test get_sms_code_kb contains numpad digits, del, clear, and action buttons."""
+    kb = get_sms_code_kb()
+    # Check 7 rows: 1-3, 4-6, 7-9, del-0-clear, resend, switch_qr, main_menu
+    assert len(kb.inline_keyboard) == 7
+    assert kb.inline_keyboard[0][0].callback_data == "num:1"
+    assert kb.inline_keyboard[0][1].callback_data == "num:2"
+    assert kb.inline_keyboard[0][2].callback_data == "num:3"
+    assert kb.inline_keyboard[3][0].callback_data == "num:del"
+    assert kb.inline_keyboard[3][1].callback_data == "num:0"
+    assert kb.inline_keyboard[3][2].callback_data == "num:clear"
+    assert kb.inline_keyboard[4][0].callback_data == "resend_sms_code"
+    assert kb.inline_keyboard[5][0].callback_data == "start_auth"
+    assert kb.inline_keyboard[6][0].callback_data == "back_to_start"
+
+
+def test_format_code_slots():
+    """Test _format_code_slots formats partial and full 5-digit codes."""
+    empty = _format_code_slots("")
+    assert empty == "`[ • ]` `[ • ]` `[ • ]` `[ • ]` `[ • ]`"
+
+    partial = _format_code_slots("48")
+    assert partial == "`[ 4 ]` `[ 8 ]` `[ • ]` `[ • ]` `[ • ]`"
+
+    full = _format_code_slots("48291")
+    assert full == "`[ 4 ]` `[ 8 ]` `[ 2 ]` `[ 9 ]` `[ 1 ]`"
 
 
 def test_start_keyboard_structure():

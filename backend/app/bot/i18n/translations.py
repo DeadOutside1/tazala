@@ -479,6 +479,41 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "Please wait 10-15 minutes or use the instant 1-click login."
         ),
     },
+    "code_display_label": {
+        "ru": "Код:",
+        "kk": "Код:",
+        "en": "Code:",
+    },
+    "code_numpad_tip": {
+        "ru": "👇 _Нажимайте кнопки с цифрами ниже для безопасного ввода кода._",
+        "kk": "👇 _Кодты қауіпсіз енгізу үшін төмендегі сандарды басыңыз._",
+        "en": "👇 _Tap the number buttons below for secure code entry._",
+    },
+    "code_verifying": {
+        "ru": "⏳ Проверяем код {code}...",
+        "kk": "⏳ {code} коды тексерілуде...",
+        "en": "⏳ Verifying code {code}...",
+    },
+    "phone_code_expired_tip": {
+        "ru": (
+            "❌ **Telegram аннулировал этот код из соображений безопасности.**\n\n"
+            "Telegram автоматически блокирует коды, отправленные текстом в чат.\n\n"
+            "👉 Нажмите **«🔄 Отправить код повторно»** и введите новый код "
+            "**кнопками с цифрами ниже** 👇"
+        ),
+        "kk": (
+            "❌ **Telegram қауіпсіздік мақсатында бұл кодты жойды.**\n\n"
+            "Telegram чатқа мәтін ретінде жіберілген кодтарды бұғаттайды.\n\n"
+            "👉 **«🔄 Кодты қайта жіберу»** басып, жаңа кодты "
+            "**төмендегі сандар батырмаларымен** енгізіңіз 👇"
+        ),
+        "en": (
+            "❌ **Telegram invalidated this code for security reasons.**\n\n"
+            "Telegram automatically revokes codes sent as chat text.\n\n"
+            "👉 Tap **«🔄 Resend code»** and enter the new code "
+            "using the **number buttons below** 👇"
+        ),
+    },
     "phone_auth_success": {
         "ru": (
             "✅ **Вы успешно вошли по номеру телефона!**\n\n"

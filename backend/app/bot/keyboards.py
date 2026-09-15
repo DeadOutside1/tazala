@@ -95,26 +95,49 @@ def get_phone_auth_kb(lang: str = "ru") -> InlineKeyboardMarkup:
 
 
 def get_sms_code_kb(lang: str = "ru") -> InlineKeyboardMarkup:
-    """Navigation keyboard while waiting for verification code."""
+    """
+    Interactive number pad keyboard for entering verification code without sending
+    chat text (which prevents Telegram from intercepting and auto-invalidating the code).
+    """
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                InlineKeyboardButton(text="1", callback_data="num:1"),
+                InlineKeyboardButton(text="2", callback_data="num:2"),
+                InlineKeyboardButton(text="3", callback_data="num:3"),
+            ],
+            [
+                InlineKeyboardButton(text="4", callback_data="num:4"),
+                InlineKeyboardButton(text="5", callback_data="num:5"),
+                InlineKeyboardButton(text="6", callback_data="num:6"),
+            ],
+            [
+                InlineKeyboardButton(text="7", callback_data="num:7"),
+                InlineKeyboardButton(text="8", callback_data="num:8"),
+                InlineKeyboardButton(text="9", callback_data="num:9"),
+            ],
+            [
+                InlineKeyboardButton(text="⌫", callback_data="num:del"),
+                InlineKeyboardButton(text="0", callback_data="num:0"),
+                InlineKeyboardButton(text="🗑", callback_data="num:clear"),
+            ],
             [
                 InlineKeyboardButton(
                     text=i18n.get_text("btn_resend_code", lang=lang),
                     callback_data="resend_sms_code",
-                )
+                ),
             ],
             [
                 InlineKeyboardButton(
                     text=i18n.get_text("btn_switch_to_qr", lang=lang),
                     callback_data="start_auth",
-                )
+                ),
             ],
             [
                 InlineKeyboardButton(
                     text=i18n.get_text("btn_main_menu", lang=lang),
                     callback_data="back_to_start",
-                )
+                ),
             ],
         ]
     )

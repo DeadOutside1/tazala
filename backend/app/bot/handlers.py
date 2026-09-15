@@ -332,6 +332,17 @@ async def cb_start_phone_auth(
     await callback.answer()
 
 
+def _format_code_slots(code: str) -> str:
+    """Format digits as slots, e.g. [ 4 ] [ 8 ] [ • ] [ • ] [ • ]."""
+    slots = []
+    for i in range(5):
+        if i < len(code):
+            slots.append(f"`[ {code[i]} ]`")
+        else:
+            slots.append("`[ • ]`")
+    return " ".join(slots)
+
+
 @router.message(AuthSG.waiting_phone_number)
 async def msg_phone_number(
     message: Message,
@@ -375,6 +386,7 @@ async def msg_phone_number(
             phone=phone,
             phone_code_hash=phone_code_hash,
             delivery_type=delivery_type,
+            entered_code="",
         )
         await state.set_state(AuthSG.waiting_sms_code)
 
@@ -387,8 +399,14 @@ async def msg_phone_number(
         if email_pattern and "{email}" in prompt_text:
             prompt_text = prompt_text.replace("{email}", email_pattern)
 
+        full_prompt = (
+            f"{prompt_text}\n\n"
+            f"📱 **Код:** {_format_code_slots('')}\n\n"
+            f"{i18n.get_text('code_numpad_tip', lang=lang)}"
+        )
+
         await message.answer(
-            prompt_text,
+            full_prompt,
             reply_markup=get_sms_code_kb(lang=lang),
             parse_mode="Markdown",
         )
@@ -430,7 +448,11 @@ async def cb_resend_sms_code(
         resend_res = await phone_auth.resend_code(client, phone, phone_code_hash)
         new_hash = resend_res.phone_code_hash
         delivery_type = getattr(resend_res, "delivery_type", "app")
-        await state.update_data(phone_code_hash=new_hash, delivery_type=delivery_type)
+        await state.update_data(
+            phone_code_hash=new_hash,
+            delivery_type=delivery_type,
+            entered_code="",
+        )
         await callback.answer(i18n.get_text("code_resent_alert", lang=lang), show_alert=False)
 
         prompt_key = f"sms_code_prompt_{delivery_type}"
@@ -439,9 +461,15 @@ async def cb_resend_sms_code(
             text_template = i18n.get_text("sms_code_prompt", lang=lang)
         prompt_text = text_template.replace("{phone}", phone)
 
+        full_prompt = (
+            f"🔄 {prompt_text}\n\n"
+            f"📱 **Код:** {_format_code_slots('')}\n\n"
+            f"{i18n.get_text('code_numpad_tip', lang=lang)}"
+        )
+
         if callback.message:
             await callback.message.answer(
-                f"🔄 {prompt_text}",
+                full_prompt,
                 reply_markup=get_sms_code_kb(lang=lang),
                 parse_mode="Markdown",
             )
@@ -453,6 +481,122 @@ async def cb_resend_sms_code(
         await callback.answer(f"⚠️ {err_msg}", show_alert=True)
 
 
+@router.callback_query(F.data.startswith("num:"), AuthSG.waiting_sms_code)
+async def cb_numpad_digit(
+    callback: CallbackQuery,
+    state: FSMContext,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Handle keypad digit press for code verification without sending chat text."""
+    action = callback.data.split(":")[1]
+    data = await state.get_data()
+    entered_code = data.get("entered_code", "")
+    phone = data.get("phone", "")
+    phone_code_hash = data.get("phone_code_hash", "")
+    session_id = data.get("session_id", "")
+    delivery_type = data.get("delivery_type", "app")
+    client = _ACTIVE_AUTH_CLIENTS.get(session_id)
+
+    if not client or not phone or not phone_code_hash:
+        await callback.answer(i18n.get_text("session_not_found", lang=lang), show_alert=True)
+        return
+
+    if action == "del":
+        entered_code = entered_code[:-1]
+    elif action == "clear":
+        entered_code = ""
+    elif action.isdigit() and len(entered_code) < 5:
+        entered_code += action
+    else:
+        await callback.answer()
+        return
+
+    await state.update_data(entered_code=entered_code)
+
+    prompt_key = f"sms_code_prompt_{delivery_type}"
+    text_template = i18n.get_text(prompt_key, lang=lang)
+    if text_template == prompt_key:
+        text_template = i18n.get_text("sms_code_prompt", lang=lang)
+    prompt_text = text_template.replace("{phone}", phone)
+
+    # When 5 digits are collected, verify immediately!
+    if len(entered_code) == 5:
+        await callback.answer()
+        verifying_text = (
+            f"{prompt_text}\n\n"
+            f"📱 **Код:** {_format_code_slots(entered_code)}\n\n"
+            f"{i18n.get_text('code_verifying', lang=lang).replace('{code}', entered_code)}"
+        )
+        if callback.message:
+            try:
+                await callback.message.edit_text(
+                    verifying_text,
+                    reply_markup=get_sms_code_kb(lang=lang),
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                pass
+
+        r = _get_redis(redis)
+        phone_auth = PhoneAuthService(session_store=SessionStore(r))
+        result = await phone_auth.sign_in_with_code(
+            client=client,
+            phone=phone,
+            code=entered_code,
+            phone_code_hash=phone_code_hash,
+            session_id=session_id,
+        )
+
+        if result.state == AuthState.AUTHENTICATED:
+            await state.set_state(AppSG.authenticated)
+            _ACTIVE_AUTH_CLIENTS.pop(session_id, None)
+            if callback.message:
+                await callback.message.answer(
+                    i18n.get_text("phone_auth_success", lang=lang),
+                    reply_markup=get_scan_kb(lang=lang),
+                    parse_mode="Markdown",
+                )
+            return
+        elif result.state == AuthState.TWO_FA_REQUIRED:
+            await state.set_state(AuthSG.waiting_2fa_password)
+            if callback.message:
+                await callback.message.answer(
+                    i18n.get_text("two_fa_prompt", lang=lang),
+                    parse_mode="Markdown",
+                )
+            return
+        else:
+            err_msg = result.error or i18n.get_text("phone_auth_error", lang=lang)
+            if "PhoneCodeExpired" in str(err_msg) or "expired" in str(err_msg).lower():
+                err_msg = i18n.get_text("phone_code_expired_tip", lang=lang)
+            await state.update_data(entered_code="")
+            if callback.message:
+                await callback.message.answer(
+                    f"❌ **{err_msg}**",
+                    reply_markup=get_sms_code_kb(lang=lang),
+                    parse_mode="Markdown",
+                )
+            return
+
+    # Update slot display
+    updated_text = (
+        f"{prompt_text}\n\n"
+        f"📱 **Код:** {_format_code_slots(entered_code)}\n\n"
+        f"{i18n.get_text('code_numpad_tip', lang=lang)}"
+    )
+    if callback.message:
+        try:
+            await callback.message.edit_text(
+                updated_text,
+                reply_markup=get_sms_code_kb(lang=lang),
+                parse_mode="Markdown",
+            )
+        except Exception:
+            pass
+    await callback.answer()
+
+
 @router.message(AuthSG.waiting_sms_code)
 async def msg_sms_code(
     message: Message,
@@ -462,7 +606,7 @@ async def msg_sms_code(
 ) -> None:
     """Receive SMS/Telegram code and complete sign-in."""
     raw_code = message.text or ""
-    code = raw_code.strip().replace(" ", "").replace("-", "")
+    code = raw_code.strip().replace(" ", "").replace("-", "").replace(".", "")
 
     # Security: Delete code message from chat
     try:
@@ -507,6 +651,8 @@ async def msg_sms_code(
         )
     else:
         err_msg = result.error or i18n.get_text("phone_auth_error", lang=lang)
+        if "PhoneCodeExpired" in str(err_msg) or "expired" in str(err_msg).lower():
+            err_msg = i18n.get_text("phone_code_expired_tip", lang=lang)
         await message.answer(
             f"❌ **{err_msg}**",
             reply_markup=get_sms_code_kb(lang=lang),
