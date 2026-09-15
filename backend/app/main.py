@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Startup: connect Redis and start Telegram Bot. Shutdown: stop Bot and close Redis."""
     logger.info("Starting up — connecting to Redis...")
-    app.state.redis = Redis.from_url(settings.REDIS_URL, decode_responses=False)
+    app.state.redis = Redis.from_url(settings.REDIS_URL, decode_responses=False, protocol=2)
     await app.state.redis.ping()
     logger.info("Redis connected ✅")
 

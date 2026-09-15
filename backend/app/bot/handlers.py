@@ -51,7 +51,7 @@ def _get_redis(redis_instance: Redis | None = None) -> Redis:
     """Helper to return provided Redis or connect to settings.REDIS_URL."""
     if redis_instance is not None:
         return redis_instance
-    return Redis.from_url(settings.REDIS_URL, decode_responses=False)
+    return Redis.from_url(settings.REDIS_URL, decode_responses=False, protocol=2)
 
 
 # --- A. /start, /help, /lang & Language Switching Handlers ---

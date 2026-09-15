@@ -70,7 +70,7 @@ async def main() -> None:
     parser.add_argument("session_id", nargs="?", help="Active session UUID from Redis")
     args = parser.parse_args()
 
-    redis = Redis.from_url(settings.REDIS_URL, decode_responses=False)
+    redis = Redis.from_url(settings.REDIS_URL, decode_responses=False, protocol=2)
     session_id = await get_target_session_id(redis, args.session_id)
 
     if not session_id:

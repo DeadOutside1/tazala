@@ -26,7 +26,7 @@ async def main() -> None:
     print("🚀 Tazala MTProto QR-Login Debugger")
     print("=" * 60)
 
-    redis = Redis.from_url(settings.REDIS_URL, decode_responses=False)
+    redis = Redis.from_url(settings.REDIS_URL, decode_responses=False, protocol=2)
     session_store = SessionStore(redis)
     auth_service = QRAuthService(session_store=session_store)
 
