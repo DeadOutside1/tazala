@@ -293,9 +293,14 @@ class CleanerService:
                 or (filters_response if isinstance(filters_response, list) else [])
             )
             used_ids = {f.id for f in filters_list if hasattr(f, "id")}
-            used_titles = {
-                getattr(f, "title", None) for f in filters_list if hasattr(f, "title")
-            }
+            used_titles: set[str] = set()
+            for f in filters_list:
+                t = getattr(f, "title", None)
+                if t is not None:
+                    if hasattr(t, "text"):
+                        used_titles.add(t.text)
+                    elif isinstance(t, str):
+                        used_titles.add(t)
         except Exception as e:
             logger.warning("Could not fetch existing dialog filters: %s", e)
             used_ids = set()
@@ -357,12 +362,18 @@ class CleanerService:
                 continue
 
             free_id = available_ids.pop(0)
+            title_val = (
+                types.TextWithEntities(text=rule.title, entities=[])
+                if hasattr(types, "TextWithEntities")
+                else rule.title
+            )
             dialog_filter = types.DialogFilter(
                 id=free_id,
-                title=rule.title,
+                title=title_val,
                 pinned_peers=[],
                 include_peers=include_peers,
                 exclude_peers=[],
+                emoticon=rule.emoji,
             )
 
             try:
