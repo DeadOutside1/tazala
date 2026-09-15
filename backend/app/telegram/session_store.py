@@ -7,9 +7,6 @@ import logging
 
 from redis.asyncio import Redis
 from telethon import TelegramClient
-from telethon.sessions import StringSession
-
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +16,7 @@ class SessionStore:
 
     def __init__(self, redis: Redis) -> None:
         self.redis = redis
-        self.default_ttl = 300  # 5 minutes
+        self.default_ttl = 1800  # 30 minutes idle TTL
 
     async def save(self, session_id: str, session_string: str, ttl: int | None = None) -> None:
         """Save StringSession to Redis with TTL."""
@@ -41,18 +38,18 @@ class SessionStore:
         session_string = raw.decode() if isinstance(raw, bytes) else raw
 
         try:
-            session = StringSession(session_string)
-            client = TelegramClient(
-                session,
-                settings.TELEGRAM_API_ID,
-                settings.TELEGRAM_API_HASH,
-            )
+            from app.telegram.client_manager import ClientManager
+
+            client = ClientManager.client_from_session_string(session_string)
             await client.connect()
 
             if not await client.is_user_authorized():
                 logger.warning("Session %s... is no longer authorized", session_id[:8])
                 await self.destroy(session_id, client)
                 return None
+
+            # Automatically extend TTL on active usage
+            await self.extend_ttl(session_id, self.default_ttl)
 
             return client
         except Exception as e:
@@ -84,3 +81,8 @@ class SessionStore:
         """Extend session TTL (e.g. during long cleanup operations)."""
         await self.redis.expire(f"session:{session_id}", extra_seconds)
         logger.info("Session %s... TTL extended by %ds", session_id[:8], extra_seconds)
+
+    async def exists(self, session_id: str) -> bool:
+        """Check if an active session exists in Redis."""
+        return bool(await self.redis.exists(f"session:{session_id}"))
+

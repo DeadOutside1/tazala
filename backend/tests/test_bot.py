@@ -17,6 +17,7 @@ from aiogram.types import CallbackQuery, Message
 from app.bot.bot import create_bot_and_dispatcher
 from app.bot.handlers import _format_code_slots, cb_session_logout, cmd_start
 from app.bot.keyboards import (
+    get_clean_completed_kb,
     get_diagnostic_kb,
     get_scan_kb,
     get_sms_code_kb,
@@ -89,12 +90,31 @@ def test_diagnostic_keyboard_structure():
 
 
 def test_wrapped_keyboard_structure():
-    """Test get_wrapped_kb contains share URL, logout callback, and back_to_start."""
+    """Test get_wrapped_kb contains share URL and back_to_start."""
     kb = get_wrapped_kb(session_id="dummy-sess")
-    assert len(kb.inline_keyboard) == 3
+    assert len(kb.inline_keyboard) == 2
     assert "https://t.me/share/url" in (kb.inline_keyboard[0][0].url or "")
-    assert kb.inline_keyboard[1][0].callback_data == "session_logout"
-    assert kb.inline_keyboard[2][0].callback_data == "back_to_start"
+    assert kb.inline_keyboard[1][0].callback_data == "back_to_start"
+
+
+def test_clean_completed_keyboard_structure():
+    """Test get_clean_completed_kb contains folders_only, rescan, logout, and back_to_start."""
+    kb = get_clean_completed_kb()
+    assert len(kb.inline_keyboard) == 4
+    assert kb.inline_keyboard[0][0].callback_data == "run_clean:folders_only"
+    assert kb.inline_keyboard[1][0].callback_data == "run_scan"
+    assert kb.inline_keyboard[2][0].callback_data == "session_logout"
+    assert kb.inline_keyboard[3][0].callback_data == "back_to_start"
+
+
+def test_start_keyboard_active_session():
+    """Test get_start_kb displays active session buttons when has_active_session=True."""
+    kb = get_start_kb(has_active_session=True)
+    assert len(kb.inline_keyboard) == 5
+    assert kb.inline_keyboard[0][0].callback_data == "run_scan"
+    assert kb.inline_keyboard[1][0].callback_data == "run_clean:folders_only"
+    assert kb.inline_keyboard[2][0].callback_data == "session_logout"
+
 
 
 # --- 2. ThrottledMessageEditor Tests ---
@@ -154,11 +174,15 @@ async def test_cmd_start():
     """Test /start clears state and sends welcome message with start keyboard."""
     mock_msg = AsyncMock(spec=Message)
     mock_msg.answer = AsyncMock()
+    mock_msg.from_user = None
 
     mock_state = AsyncMock(spec=FSMContext)
     mock_state.clear = AsyncMock()
+    mock_state.get_data = AsyncMock(return_value={})
 
-    await cmd_start(mock_msg, mock_state)
+    mock_redis = AsyncMock()
+
+    await cmd_start(mock_msg, mock_state, redis=mock_redis)
 
     mock_state.clear.assert_awaited_once()
     mock_msg.answer.assert_awaited_once()
@@ -176,6 +200,7 @@ async def test_cb_session_logout():
     mock_cb = AsyncMock(spec=CallbackQuery)
     mock_cb.data = "session_logout"
     mock_cb.answer = AsyncMock()
+    mock_cb.from_user = None
     mock_cb.message = AsyncMock(spec=Message)
     mock_cb.message.answer = AsyncMock()
 
@@ -184,9 +209,11 @@ async def test_cb_session_logout():
     mock_state.clear = AsyncMock()
 
     mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(return_value=None)
 
     with patch("app.bot.handlers.SessionStore") as mock_store_cls:
         mock_instance = AsyncMock()
+        mock_instance.exists = AsyncMock(return_value=True)
         mock_instance.load = AsyncMock(return_value=AsyncMock())
         mock_instance.destroy = AsyncMock()
         mock_store_cls.return_value = mock_instance
@@ -198,6 +225,47 @@ async def test_cb_session_logout():
     assert mock_cb.message.answer.await_count == 1
     call_text = mock_cb.message.answer.await_args[0][0]
     assert "Сессия успешно уничтожена" in call_text
+
+
+@pytest.mark.asyncio
+async def test_cb_session_logout_with_wrapped_card():
+    """Test logout callback sends photo card when cleanup stats are present."""
+    mock_cb = AsyncMock(spec=CallbackQuery)
+    mock_cb.data = "session_logout"
+    mock_cb.answer = AsyncMock()
+    mock_cb.from_user = None
+    mock_cb.message = AsyncMock(spec=Message)
+    mock_cb.message.answer_photo = AsyncMock()
+
+    mock_state = AsyncMock(spec=FSMContext)
+    mock_state.get_data = AsyncMock(return_value={"session_id": "test-logout-session"})
+    mock_state.clear = AsyncMock()
+
+    mock_redis = AsyncMock()
+    stats_json = (
+        '{"session_id":"test-logout-session","total_dialogs":50,"total_unread":100,'
+        '"messages_cleared":100,"time_saved_hours":1.5,"zen_score":95,'
+        '"archetype":"digital_monk","archetype_title":"Цифровой монах",'
+        '"archetype_description":"Абсолютный дзен","top_unread_source":"News"}'
+    )
+    mock_redis.get = AsyncMock(return_value=stats_json)
+
+    with patch("app.bot.handlers.SessionStore") as mock_store_cls, \
+         patch("app.bot.handlers.WrappedService.generate_wrapped_card", return_value=b"fake_png"):
+        mock_instance = AsyncMock()
+        mock_instance.exists = AsyncMock(return_value=True)
+        mock_instance.load = AsyncMock(return_value=AsyncMock())
+        mock_instance.destroy = AsyncMock()
+        mock_store_cls.return_value = mock_instance
+
+        await cb_session_logout(mock_cb, mock_state, redis=mock_redis)
+
+    mock_state.clear.assert_awaited_once()
+    mock_instance.destroy.assert_awaited_once()
+    assert mock_cb.message.answer_photo.await_count == 1
+    call_kwargs = mock_cb.message.answer_photo.await_args.kwargs
+    assert "Сессия успешно уничтожена" in call_kwargs.get("caption", "")
+
 
 
 # --- 5. Bot & Dispatcher Factory Test ---

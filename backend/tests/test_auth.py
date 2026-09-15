@@ -53,7 +53,7 @@ def session_store(mock_redis: AsyncMock) -> SessionStore:
 async def test_session_store_save(session_store: SessionStore, mock_redis: AsyncMock):
     """Test saving session to Redis with default and custom TTL."""
     await session_store.save("sess-1", "session_string_data")
-    mock_redis.setex.assert_awaited_once_with("session:sess-1", 300, "session_string_data")
+    mock_redis.setex.assert_awaited_once_with("session:sess-1", 1800, "session_string_data")
 
     mock_redis.setex.reset_mock()
     await session_store.save("sess-2", "custom_ttl_data", ttl=600)
@@ -69,8 +69,10 @@ async def test_session_store_load_success(session_store: SessionStore, mock_redi
     mock_client.connect = AsyncMock()
     mock_client.is_user_authorized = AsyncMock(return_value=True)
 
-    with patch("app.telegram.session_store.StringSession"), \
-         patch("app.telegram.session_store.TelegramClient", return_value=mock_client):
+    with patch(
+        "app.telegram.client_manager.ClientManager.client_from_session_string",
+        return_value=mock_client,
+    ):
         client = await session_store.load("sess-1")
 
     assert client is mock_client
@@ -101,8 +103,10 @@ async def test_session_store_load_unauthorized_destroys_session(
     mock_client.log_out = AsyncMock()
     mock_client.disconnect = AsyncMock()
 
-    with patch("app.telegram.session_store.StringSession"), \
-         patch("app.telegram.session_store.TelegramClient", return_value=mock_client):
+    with patch(
+        "app.telegram.client_manager.ClientManager.client_from_session_string",
+        return_value=mock_client,
+    ):
         client = await session_store.load("invalid-sess")
 
     assert client is None
@@ -118,7 +122,10 @@ async def test_session_store_load_malformed_string(
     """Test loading corrupted/malformed session string destroys key and returns None."""
     mock_redis.get.return_value = b"corrupted_session"
 
-    with patch("app.telegram.session_store.StringSession", side_effect=ValueError("Bad session")):
+    with patch(
+        "app.telegram.client_manager.ClientManager.client_from_session_string",
+        side_effect=ValueError("Bad session"),
+    ):
         client = await session_store.load("corrupted-sess")
 
     assert client is None

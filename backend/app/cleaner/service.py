@@ -317,13 +317,9 @@ class CleanerService:
         total_presets = len(presets)
 
         for rule in presets:
-            if not available_ids:
+            if not available_ids and rule.title not in used_titles:
                 logger.info("No free folder slots remaining (max 10).")
                 break
-
-            if rule.title in used_titles:
-                logger.info("Folder '%s' already exists, skipping.", rule.title)
-                continue
 
             # Identify matching dialogs
             matching: list[DialogInfo] = []
@@ -340,9 +336,6 @@ class CleanerService:
                         if any(kw in title_lower for kw in rule.keywords):
                             matching.append(d)
 
-            if not matching:
-                continue
-
             # Telegram allows maximum 100 peers per folder for non-premium
             candidates = matching[:100]
             include_peers = []
@@ -358,7 +351,34 @@ class CleanerService:
                     logger.debug("Failed resolving InputPeer for %s (%d): %s", d.title, d.id, e)
                     continue
 
-            if not include_peers:
+            # If folder already exists, update it with new peers if available
+            if rule.title in used_titles:
+                existing_filter = None
+                for f in filters_list:
+                    t = getattr(f, "title", None)
+                    t_str = t.text if hasattr(t, "text") else str(t or "")
+                    if t_str == rule.title:
+                        existing_filter = f
+                        break
+
+                if existing_filter and include_peers:
+                    existing_peers = getattr(existing_filter, "include_peers", []) or []
+                    existing_filter.include_peers = list(existing_peers) + [
+                        p for p in include_peers if p not in existing_peers
+                    ][:max(0, 100 - len(existing_peers))]
+
+                    try:
+                        await FloodSafeExecutor.execute(
+                            lambda fid=existing_filter.id, df=existing_filter: client(
+                                UpdateDialogFilterRequest(id=fid, filter=df)
+                            ),
+                            default_delay=1.5,
+                        )
+                        logger.info("Updated existing folder '%s'", rule.title)
+                    except Exception as e:
+                        logger.warning("Failed updating folder '%s': %s", rule.title, e)
+
+                created_folders.append(rule.title)
                 continue
 
             free_id = available_ids.pop(0)
@@ -374,6 +394,10 @@ class CleanerService:
                 include_peers=include_peers,
                 exclude_peers=[],
                 emoticon=rule.emoji,
+                contacts=(rule.emoji == "💬"),
+                non_contacts=(rule.emoji == "💬"),
+                groups=(ChatType.GROUP in rule.categories),
+                broadcasts=(ChatType.CHANNEL in rule.categories),
             )
 
             try:

@@ -620,6 +620,77 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "kk": "🔲 Тазарту",
         "en": "🔲 None",
     },
+    "clean_completed_report": {
+        "ru": (
+            "✨ **Очистка успешно завершена!**\n\n"
+            "• ✉️ Отмечено прочитанными: **{marked}**\n"
+            "• 📁 Создано/обновлено папок: **{folders}**\n\n"
+            "Сессия остаётся **активной**. Вы можете настроить другие папки "
+            "или запустить повторный анализ.\n\n"
+            "Когда закончите, нажмите **«🚪 Выйти и удалить сессию»**, чтобы отозвать "
+            "доступ на серверах Telegram и получить итоговую карточку для Stories! 📲"
+        ),
+        "kk": (
+            "✨ **Тазарту сәтті аяқталды!**\n\n"
+            "• ✉️ Оқылған деп белгіленді: **{marked}**\n"
+            "• 📁 Құрылған/жаңартылған папкалар: **{folders}**\n\n"
+            "Сессия **белсенді** күйде қалады. Басқа папкаларды баптауға "
+            "немесе қайта талдау жасауға болады.\n\n"
+            "Аяқтаған соң, Telegram серверлеріндегі кілтті өшіру және "
+            "Stories карточкасын алу үшін **«🚪 Шығу және сессияны жою»** батырмасын басыңыз! 📲"
+        ),
+        "en": (
+            "✨ **Cleanup completed successfully!**\n\n"
+            "• ✉️ Marked as read: **{marked}**\n"
+            "• 📁 Created/updated folders: **{folders}**\n\n"
+            "Your session remains **active**. You can configure additional folders "
+            "or run a re-scan.\n\n"
+            "When you are finished, tap **«🚪 Log out & destroy session»** to revoke access "
+            "on Telegram servers and receive your Wrapped social card! 📲"
+        ),
+    },
+    "wrapped_logout_caption": {
+        "ru": (
+            "🔒 **Сессия успешно уничтожена!**\n"
+            "Ключ авторизации отозван на серверах Telegram (Zero-Knowledge).\n\n"
+            "🧘 **Твой Дзен в Telegram:**\n"
+            "• Архетип: **{archetype}**\n"
+            "• Очищено сообщений: **{messages}**\n"
+            "• Сэкономлено: **{hours} ч**\n"
+            "• Дзен-индекс: **{score}/100**\n\n"
+            "Поделись своим результатом в Instagram Stories или с друзьями 👇"
+        ),
+        "kk": (
+            "🔒 **Сессия сәтті жойылды!**\n"
+            "Telegram серверлеріндегі кілт кері қайтарылды (Zero-Knowledge).\n\n"
+            "🧘 **Telegram-дағы Дзеніңіз:**\n"
+            "• Архетип: **{archetype}**\n"
+            "• Тазартылған хабарламалар: **{messages}**\n"
+            "• Үнемделді: **{hours} сағ**\n"
+            "• Дзен-индекс: **{score}/100**\n\n"
+            "Нәтижеңізді Instagram Stories-те немесе достарыңызбен бөлісіңіз 👇"
+        ),
+        "en": (
+            "🔒 **Session terminated and destroyed!**\n"
+            "Authorization key revoked on Telegram servers (Zero-Knowledge).\n\n"
+            "🧘 **Your Telegram Zen:**\n"
+            "• Archetype: **{archetype}**\n"
+            "• Cleared messages: **{messages}**\n"
+            "• Saved: **{hours} hrs**\n"
+            "• Zen Index: **{score}/100**\n\n"
+            "Share your achievement on Instagram Stories or with friends 👇"
+        ),
+    },
+    "btn_rescan": {
+        "ru": "🔄 Повторное сканирование",
+        "kk": "🔄 Қайта сканерлеу",
+        "en": "🔄 Re-scan account",
+    },
+    "btn_continue_session": {
+        "ru": "⚡ Продолжить работу (активная сессия)",
+        "kk": "⚡ Жұмысты жалғастыру (белсенді сессия)",
+        "en": "⚡ Continue session (active)",
+    },
 }
 
 # Archetype metadata for all languages

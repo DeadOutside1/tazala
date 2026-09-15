@@ -23,6 +23,7 @@ from app.auth.schemas import AuthState
 from app.auth.service import PhoneAuthService, QRAuthService
 from app.bot.i18n.manager import i18n
 from app.bot.keyboards import (
+    get_clean_completed_kb,
     get_diagnostic_kb,
     get_folder_selection_kb,
     get_language_kb,
@@ -58,6 +59,29 @@ def _get_redis(redis_instance: Redis | None = None) -> Redis:
     return Redis.from_url(settings.REDIS_URL, decode_responses=False, protocol=2)
 
 
+async def _get_active_session_id(state: FSMContext, redis: Redis, user_id: int) -> str | None:
+    """
+    Find active session_id from FSMContext or Redis user binding.
+    Verifies that the session key actually exists in Redis before returning.
+    """
+    session_store = SessionStore(redis)
+    data = await state.get_data()
+    session_id = data.get("session_id")
+    if session_id and await session_store.exists(session_id):
+        return session_id
+
+    if user_id:
+        raw_sid = await redis.get(f"user_session:{user_id}")
+        if raw_sid:
+            sid = raw_sid.decode() if isinstance(raw_sid, bytes) else raw_sid
+            if await session_store.exists(sid):
+                await state.update_data(session_id=sid)
+                return sid
+            else:
+                await redis.delete(f"user_session:{user_id}")
+    return None
+
+
 # --- A. /start, /help, /lang & Language Switching Handlers ---
 
 
@@ -70,11 +94,30 @@ def _get_redis(redis_instance: Redis | None = None) -> Redis:
         "басты мәзір", "main menu", "старт", "start",
     })
 )
-async def cmd_start(message: Message, state: FSMContext, lang: str = "ru") -> None:
-    """Welcome user and explain Tazala mission."""
-    await state.clear()
+async def cmd_start(
+    message: Message,
+    state: FSMContext,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Welcome user and explain Tazala mission, displaying active session controls if connected."""
+    r = _get_redis(redis)
+    user = getattr(message, "from_user", None)
+    user_id = user.id if user else 0
+    active_sid = await _get_active_session_id(state, r, user_id)
+    has_session = bool(active_sid)
+
+    if not has_session:
+        await state.clear()
+    else:
+        await state.set_state(AppSG.ready_to_clean)
+
     text = i18n.get_text("start_welcome", lang=lang)
-    await message.answer(text, reply_markup=get_start_kb(lang=lang), parse_mode="Markdown")
+    await message.answer(
+        text,
+        reply_markup=get_start_kb(lang=lang, has_active_session=has_session),
+        parse_mode="Markdown",
+    )
 
 
 @router.message(Command("lang"))
@@ -154,16 +197,78 @@ async def cb_about_security(callback: CallbackQuery, lang: str = "ru") -> None:
 async def cb_back_to_start(
     callback: CallbackQuery,
     state: FSMContext,
+    redis: Redis | None = None,
     lang: str = "ru",
 ) -> None:
-    """Return to start menu."""
-    await state.clear()
+    """Return to start menu, preserving active session if still alive."""
+    r = _get_redis(redis)
+    user = getattr(callback, "from_user", None)
+    user_id = user.id if user else 0
+    active_sid = await _get_active_session_id(state, r, user_id)
+    has_session = bool(active_sid)
+
+    if not has_session:
+        await state.clear()
+    else:
+        await state.set_state(AppSG.ready_to_clean)
+
     text = i18n.get_text("start_welcome", lang=lang)
+    kb = get_start_kb(lang=lang, has_active_session=has_session)
     if callback.message:
-        await callback.message.edit_text(
-            text, reply_markup=get_start_kb(lang=lang), parse_mode="Markdown"
-        )
+        try:
+            await callback.message.edit_text(
+                text, reply_markup=kb, parse_mode="Markdown"
+            )
+        except Exception:
+            await callback.message.answer(
+                text, reply_markup=kb, parse_mode="Markdown"
+            )
     await callback.answer()
+
+
+@router.message(
+    F.text.casefold().in_({
+        "⚡ начать очистку", "⚡ тазартуды бастау", "⚡ start cleaner",
+        "начать очистку", "тазартуды бастау", "start cleaner",
+    })
+)
+async def msg_start_cleaner_reply_btn(
+    message: Message,
+    state: FSMContext,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Handle persistent reply keyboard button for quick cleaning/scan access."""
+    r = _get_redis(redis)
+    user = getattr(message, "from_user", None)
+    user_id = user.id if user else 0
+    active_sid = await _get_active_session_id(state, r, user_id)
+    if active_sid:
+        await state.set_state(AppSG.ready_to_clean)
+        scan_result = await ScannerService.get_cached_scan(r, active_sid)
+        if scan_result:
+            await message.answer(
+                i18n.get_text(
+                    "scan_report",
+                    lang=lang,
+                    total_dialogs=scan_result.total_dialogs,
+                    total_unread=f"{scan_result.total_unread:,}",
+                    dead_total=scan_result.dead_count + scan_result.zombie_count,
+                    dead_percentage=scan_result.dead_percentage,
+                    archived_count=scan_result.archived_count,
+                    top_list="...",
+                ),
+                reply_markup=get_diagnostic_kb(scan_result.total_unread, lang=lang),
+                parse_mode="Markdown",
+            )
+            return
+
+    text = i18n.get_text("start_welcome", lang=lang)
+    await message.answer(
+        text,
+        reply_markup=get_start_kb(lang=lang, has_active_session=bool(active_sid)),
+        parse_mode="Markdown",
+    )
 
 
 
@@ -276,7 +381,11 @@ async def cb_start_auth(
                 timeout=120,
             )
             if result.state == AuthState.AUTHENTICATED:
+                user_id = callback.from_user.id if callback.from_user else 0
+                if user_id:
+                    await r.setex(f"user_session:{user_id}", 1800, session_id)
                 await state.set_state(AppSG.authenticated)
+                await state.update_data(session_id=session_id)
                 if callback.message:
                     await callback.message.answer(
                         i18n.get_text("qr_authenticated", lang=lang),
@@ -549,7 +658,11 @@ async def cb_numpad_digit(
         )
 
         if result.state == AuthState.AUTHENTICATED:
+            user_id = callback.from_user.id if callback.from_user else 0
+            if user_id:
+                await r.setex(f"user_session:{user_id}", 1800, session_id)
             await state.set_state(AppSG.authenticated)
+            await state.update_data(session_id=session_id)
             _ACTIVE_AUTH_CLIENTS.pop(session_id, None)
             if callback.message:
                 await callback.message.answer(
@@ -636,7 +749,12 @@ async def msg_sms_code(
     )
 
     if result.state == AuthState.AUTHENTICATED:
+        user_id = message.from_user.id if message.from_user else 0
+        r = _get_redis(redis)
+        if user_id:
+            await r.setex(f"user_session:{user_id}", 1800, session_id)
         await state.set_state(AppSG.authenticated)
+        await state.update_data(session_id=session_id)
         _ACTIVE_AUTH_CLIENTS.pop(session_id, None)
         await message.answer(
             i18n.get_text("phone_auth_success", lang=lang),
@@ -692,7 +810,11 @@ async def msg_2fa_password(
     result = await auth_service.complete_2fa(client, password, session_id)
 
     if result.state == AuthState.AUTHENTICATED:
+        user_id = message.from_user.id if message.from_user else 0
+        if user_id:
+            await r.setex(f"user_session:{user_id}", 1800, session_id)
         await state.set_state(AppSG.authenticated)
+        await state.update_data(session_id=session_id)
         _ACTIVE_AUTH_CLIENTS.pop(session_id, None)
         await message.answer(
             i18n.get_text("two_fa_success", lang=lang),
@@ -714,7 +836,8 @@ async def cb_run_scan(
     lang: str = "ru",
 ) -> None:
     """Execute account diagnostic scan."""
-    user_id = callback.from_user.id if callback.from_user else 0
+    user = getattr(callback, "from_user", None)
+    user_id = user.id if user else 0
     r = _get_redis(redis)
 
     async with RedisLock(r, f"scan:{user_id}", timeout=300) as acquired:
@@ -725,8 +848,7 @@ async def cb_run_scan(
             )
             return
 
-        data = await state.get_data()
-        session_id = data.get("session_id")
+        session_id = await _get_active_session_id(state, r, user_id)
         if not session_id:
             if callback.message:
                 await callback.message.answer(i18n.get_text("session_not_found", lang=lang))
@@ -962,19 +1084,21 @@ async def cb_confirm_folders(
 ) -> None:
     """Execute cleanup with selected folder categories."""
     data = await state.get_data()
-    session_id = data.get("session_id")
     selected_emojis = data.get("selected_emojis", [])
     folder_action = data.get("folder_action", "folders_only")
 
     mark_read = folder_action != "folders_only"
+
+    user = getattr(callback, "from_user", None)
+    user_id = user.id if user else 0
+    r = _get_redis(redis)
+    session_id = await _get_active_session_id(state, r, user_id)
 
     if not session_id:
         if callback.message:
             await callback.message.answer(i18n.get_text("session_not_found", lang=lang))
         await callback.answer()
         return
-
-    r = _get_redis(redis)
 
     await _execute_cleanup(
         callback=callback,
@@ -991,7 +1115,9 @@ async def cb_confirm_folders(
 # --- F. Cleanup / Zen Button Flow ---
 
 
-@router.callback_query(F.data.in_({"run_clean:all", "run_clean:read_only"}))
+@router.callback_query(
+    F.data.in_({"run_clean:all", "run_clean:read_only", "run_clean:folders_only"})
+)
 async def cb_run_clean(
     callback: CallbackQuery,
     state: FSMContext,
@@ -1002,20 +1128,35 @@ async def cb_run_clean(
     action = callback.data or ""
     mark_read = "folders_only" not in action
     create_folders = "read_only" not in action
+    folder_action = "folders_only" if "folders_only" in action else "all"
 
-    data = await state.get_data()
-    session_id = data.get("session_id")
+    user = getattr(callback, "from_user", None)
+    user_id = user.id if user else 0
+    r = _get_redis(redis)
+    session_id = await _get_active_session_id(state, r, user_id)
     if not session_id:
         if callback.message:
             await callback.message.answer(i18n.get_text("session_not_found", lang=lang))
         await callback.answer()
         return
 
-    r = _get_redis(redis)
-
     if create_folders:
         # Redirect to folder selection UI
         scan_result = await ScannerService.get_cached_scan(r, session_id)
+        if not scan_result:
+            scan_svc = ScannerService()
+            session_store = SessionStore(r)
+            client = await session_store.load(session_id)
+            if client:
+                try:
+                    scan_result = await scan_svc.scan_account(client, session_id=session_id)
+                    await scan_svc.save_scan(r, scan_result)
+                finally:
+                    try:
+                        await client.disconnect()
+                    except Exception:
+                        pass
+
         if not scan_result:
             if callback.message:
                 await callback.message.answer(i18n.get_text("session_not_found", lang=lang))
@@ -1026,15 +1167,19 @@ async def cb_run_clean(
         all_emojis = {rule.emoji for rule in presets}
         await state.set_state(AppSG.selecting_folders)
         await state.update_data(
+            session_id=session_id,
             selected_emojis=list(all_emojis),
-            folder_action="all",
+            folder_action=folder_action,
         )
 
         text = i18n.get_text("folder_selection_title", lang=lang)
         kb = get_folder_selection_kb(presets, all_emojis, lang=lang)
 
         if callback.message:
-            await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+            try:
+                await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+            except Exception:
+                await callback.message.answer(text, reply_markup=kb, parse_mode="Markdown")
         await callback.answer()
         return
 
@@ -1062,7 +1207,8 @@ async def _execute_cleanup(
     selected_folders: list[str],
 ) -> None:
     """Shared cleanup execution logic."""
-    user_id = callback.from_user.id if callback.from_user else 0
+    user = getattr(callback, "from_user", None)
+    user_id = user.id if user else 0
 
     async with RedisLock(redis, f"clean:{user_id}", timeout=600) as acquired:
         if not acquired:
@@ -1126,37 +1272,51 @@ async def _execute_cleanup(
                 lang=lang,
             )
 
-            # Generate Wrapped Stats & Card
-            uname = callback.from_user.username if callback.from_user else None
+            # Calculate Wrapped Stats and save to Redis for 24h
+            uname = user.username if user else None
             stats = WrappedService.calculate_wrapped_stats(
                 scan_result, clean_result=clean_result, username=uname, lang=lang
             )
             await WrappedService.save_wrapped(redis, stats)
 
-            card_png = WrappedService().generate_wrapped_card(stats, lang=lang)
-            file = BufferedInputFile(card_png, filename="tazala_wrapped.png")
+            # Keep session active and restore state so user can continue
+            await state.set_state(AppSG.ready_to_clean)
+            await state.update_data(session_id=session_id)
 
-            caption = i18n.get_text(
-                "wrapped_caption",
-                lang=lang,
-                archetype=stats.archetype_title,
-                messages=f"{stats.messages_cleared:,}",
-                hours=stats.time_saved_hours,
-                score=stats.zen_score,
+            # Send clean completed report as text with active session keyboard
+            folders_str = (
+                ", ".join(clean_result.folders_created)
+                if clean_result.folders_created
+                else "—"
             )
+            report_text = i18n.get_text(
+                "clean_completed_report",
+                lang=lang,
+                marked=f"{clean_result.messages_marked:,}",
+                folders=folders_str,
+            )
+            kb = get_clean_completed_kb(lang=lang)
 
-            if callback.message:
-                await callback.message.answer_photo(
-                    photo=file,
-                    caption=caption,
-                    reply_markup=get_wrapped_kb(session_id, lang=lang),
+            if status_msg:
+                try:
+                    await status_msg.edit_text(
+                        report_text,
+                        reply_markup=kb,
+                        parse_mode="Markdown",
+                    )
+                except Exception:
+                    if callback.message:
+                        await callback.message.answer(
+                            report_text,
+                            reply_markup=kb,
+                            parse_mode="Markdown",
+                        )
+            elif callback.message:
+                await callback.message.answer(
+                    report_text,
+                    reply_markup=kb,
                     parse_mode="Markdown",
                 )
-                if status_msg:
-                    try:
-                        await status_msg.delete()
-                    except Exception:
-                        pass
         except Exception as e:
             logger.exception("Cleanup failed: %s", e)
             if status_msg:
@@ -1178,23 +1338,55 @@ async def cb_session_logout(
     redis: Redis | None = None,
     lang: str = "ru",
 ) -> None:
-    """Completely destroy session and revoke keys on Telegram servers."""
-    data = await state.get_data()
-    session_id = data.get("session_id")
+    """Completely destroy session and revoke keys on Telegram servers, then show Wrapped card."""
+    user = getattr(callback, "from_user", None)
+    user_id = user.id if user else 0
+    r = _get_redis(redis)
+    session_id = await _get_active_session_id(state, r, user_id)
     await state.clear()
 
+    if user_id:
+        await r.delete(f"user_session:{user_id}")
+
+    cached_stats = None
     if session_id:
-        r = _get_redis(redis)
         session_store = SessionStore(r)
         client = await session_store.load(session_id)
         await session_store.destroy(session_id, client)
+        cached_stats = await WrappedService.get_cached_wrapped(r, session_id)
 
+    # Show Wrapped card only upon explicit logout if cleanup stats exist
+    if cached_stats:
+        try:
+            card_png = WrappedService().generate_wrapped_card(cached_stats, lang=lang)
+            file = BufferedInputFile(card_png, filename="tazala_wrapped.png")
+            caption = i18n.get_text(
+                "wrapped_logout_caption",
+                lang=lang,
+                archetype=cached_stats.archetype_title,
+                messages=f"{cached_stats.messages_cleared:,}",
+                hours=cached_stats.time_saved_hours,
+                score=cached_stats.zen_score,
+            )
+            if callback.message:
+                await callback.message.answer_photo(
+                    photo=file,
+                    caption=caption,
+                    reply_markup=get_wrapped_kb(session_id or "", lang=lang),
+                    parse_mode="Markdown",
+                )
+            await callback.answer()
+            return
+        except Exception as e:
+            logger.exception("Failed generating wrapped card on logout: %s", e)
+
+    # Fallback / standard logout confirmation
     text = i18n.get_text("logout_confirmed", lang=lang)
     welcome = i18n.get_text("start_welcome", lang=lang)
     if callback.message:
         await callback.message.answer(
             f"{text}\n\n{welcome}",
-            reply_markup=get_start_kb(lang=lang),
+            reply_markup=get_start_kb(lang=lang, has_active_session=False),
             parse_mode="Markdown",
         )
     await callback.answer()

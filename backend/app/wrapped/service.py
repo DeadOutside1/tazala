@@ -264,7 +264,7 @@ class WrappedService:
         """Retrieve cached Wrapped stats from Redis."""
         key = f"wrapped:{session_id}"
         raw = await redis.get(key)
-        if not raw:
+        if not raw or not isinstance(raw, (str, bytes, bytearray)):
             return None
         data = raw.decode() if isinstance(raw, bytes) else raw
         return WrappedStats.model_validate_json(data)

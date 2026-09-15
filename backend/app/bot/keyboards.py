@@ -42,8 +42,47 @@ def get_language_kb() -> InlineKeyboardMarkup:
     )
 
 
-def get_start_kb(lang: str = "ru") -> InlineKeyboardMarkup:
-    """Initial menu keyboard localized to user language."""
+def get_start_kb(lang: str = "ru", has_active_session: bool = False) -> InlineKeyboardMarkup:
+    """
+    Initial menu keyboard localized to user language.
+    Displays active session options if user is already logged in.
+    """
+    if has_active_session:
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=i18n.get_text("btn_continue_session", lang=lang),
+                        callback_data="run_scan",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text=i18n.get_text("btn_clean_folders_only", lang=lang),
+                        callback_data="run_clean:folders_only",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text=i18n.get_text("btn_logout", lang=lang),
+                        callback_data="session_logout",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text=i18n.get_text("btn_security", lang=lang),
+                        callback_data="about_security",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text=i18n.get_text("btn_choose_lang", lang=lang),
+                        callback_data="choose_lang",
+                    )
+                ],
+            ]
+        )
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -250,8 +289,40 @@ def get_folder_selection_kb(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def get_wrapped_kb(session_id: str, lang: str = "ru") -> InlineKeyboardMarkup:
-    """Actions after cleanup completion: sharing & session destruction."""
+def get_clean_completed_kb(lang: str = "ru") -> InlineKeyboardMarkup:
+    """Keyboard shown after cleanup completion while session remains active."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_clean_folders_only", lang=lang),
+                    callback_data="run_clean:folders_only",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_rescan", lang=lang),
+                    callback_data="run_scan",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_logout", lang=lang),
+                    callback_data="session_logout",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_main_menu", lang=lang),
+                    callback_data="back_to_start",
+                ),
+            ],
+        ]
+    )
+
+
+def get_wrapped_kb(session_id: str = "", lang: str = "ru") -> InlineKeyboardMarkup:
+    """Actions after cleanup & logout: sharing results & return to start."""
     share_text = (
         "Мен%20Tazala%20арқылы%20Telegram-ды%20тазарттым!"
         if lang == "kk"
@@ -269,12 +340,6 @@ def get_wrapped_kb(session_id: str, lang: str = "ru") -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text=i18n.get_text("btn_share", lang=lang),
                     url=share_url,
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text=i18n.get_text("btn_logout", lang=lang),
-                    callback_data="session_logout",
                 )
             ],
             [
