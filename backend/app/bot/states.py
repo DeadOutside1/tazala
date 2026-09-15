@@ -21,3 +21,11 @@ class AppSG(StatesGroup):
     ready_to_clean = State()
     selecting_folders = State()
     cleaning = State()
+
+
+class FeedbackSG(StatesGroup):
+    """User rating and review state group."""
+
+    waiting_rating = State()
+    waiting_comment = State()
+

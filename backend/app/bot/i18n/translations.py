@@ -691,7 +691,87 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "kk": "⚡ Жұмысты жалғастыру (белсенді сессия)",
         "en": "⚡ Continue session (active)",
     },
+    # --- Admin & Feedback ---
+    "admin_access_denied": {
+        "ru": "⛔ **Доступ запрещен.**\n\nЭта команда доступна только администраторам бота.",
+        "kk": "⛔ **Рұқсат берілмеген.**\n\nБұл команда тек бот әкімшілеріне қолжетімді.",
+        "en": "⛔ **Access denied.**\n\nThis command is restricted to bot administrators.",
+    },
+    "btn_admin_panel": {
+        "ru": "👑 Админ-панель",
+        "kk": "👑 Әкімші панелі",
+        "en": "👑 Admin Panel",
+    },
+    "btn_refresh_stats": {
+        "ru": "🔄 Обновить статистику",
+        "kk": "🔄 Статистиканы жаңарту",
+        "en": "🔄 Refresh Stats",
+    },
+    "btn_recent_reviews": {
+        "ru": "📝 Отзывы пользователей",
+        "kk": "📝 Қолданушылар пікірлері",
+        "en": "📝 User Reviews",
+    },
+    "btn_leave_feedback": {
+        "ru": "⭐ Оставить отзыв",
+        "kk": "⭐ Пікір қалдыру",
+        "en": "⭐ Leave a Review",
+    },
+    "btn_skip_comment": {
+        "ru": "➡️ Пропустить комментарий",
+        "kk": "➡️ Пікірді өткізіп жіберу",
+        "en": "➡️ Skip comment",
+    },
+    "feedback_prompt": {
+        "ru": (
+            "⭐ **Оцените работу Tazala:**\n\n"
+            "Насколько бот помог вам навести порядок в Telegram? "
+            "Выберите оценку от 1 до 5 звезд:"
+        ),
+        "kk": (
+            "⭐ **Tazala жұмысын бағалаңыз:**\n\n"
+            "Бот Telegram-ды реттеуге қаншалықты көмектесті? "
+            "1-ден 5-ке дейін бағалаңыз:"
+        ),
+        "en": (
+            "⭐ **Rate your experience with Tazala:**\n\n"
+            "How well did Tazala help you declutter Telegram? "
+            "Please choose 1 to 5 stars:"
+        ),
+    },
+    "feedback_stars_saved": {
+        "ru": (
+            "⭐ Вы поставили оценку **{rating}/5**!\n\n"
+            "💬 Напишите короткий отзыв или пожелание в этот чат "
+            "(или нажмите кнопку «Пропустить комментарий»):"
+        ),
+        "kk": (
+            "⭐ Сіз **{rating}/5** бағасын қойдыңыз!\n\n"
+            "💬 Чатқа қысқаша пікір немесе ұсынысыңызды жазыңыз "
+            "(немесе «Пікірді өткізіп жіберу» батырмасын басыңыз):"
+        ),
+        "en": (
+            "⭐ You rated **{rating}/5**!\n\n"
+            "💬 Send a short review or suggestion in this chat "
+            "(or click «Skip comment»):"
+        ),
+    },
+    "feedback_saved_thanks": {
+        "ru": (
+            "🙏 **Спасибо за ваш отзыв!**\n\n"
+            "Ваша оценка и комментарий помогают нам делать Tazala ещё лучше и удобнее."
+        ),
+        "kk": (
+            "🙏 **Пікіріңізге рақмет!**\n\n"
+            "Сіздің бағаңыз бен пікіріңіз Tazala-ны одан әрі жақсартуға көмектеседі."
+        ),
+        "en": (
+            "🙏 **Thank you for your feedback!**\n\n"
+            "Your review helps us make Tazala even better."
+        ),
+    },
 }
+
 
 # Archetype metadata for all languages
 ARCHETYPES = {

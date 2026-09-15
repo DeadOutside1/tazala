@@ -19,21 +19,25 @@ from aiogram.types import (
 )
 from redis.asyncio import Redis
 
+from app.analytics.service import AnalyticsService
 from app.auth.schemas import AuthState
 from app.auth.service import PhoneAuthService, QRAuthService
 from app.bot.i18n.manager import i18n
 from app.bot.keyboards import (
+    get_admin_kb,
     get_clean_completed_kb,
     get_diagnostic_kb,
+    get_feedback_rating_kb,
     get_folder_selection_kb,
     get_language_kb,
     get_phone_auth_kb,
     get_scan_kb,
+    get_skip_comment_kb,
     get_sms_code_kb,
     get_start_kb,
     get_wrapped_kb,
 )
-from app.bot.states import AppSG, AuthSG
+from app.bot.states import AppSG, AuthSG, FeedbackSG
 from app.bot.utils import ThrottledMessageEditor
 from app.cleaner.schemas import CleanConfig
 from app.cleaner.service import CleanerService, get_smart_folder_presets
@@ -104,8 +108,12 @@ async def cmd_start(
     r = _get_redis(redis)
     user = getattr(message, "from_user", None)
     user_id = user.id if user else 0
+    if user_id:
+        await AnalyticsService.record_user(r, user_id)
+
     active_sid = await _get_active_session_id(state, r, user_id)
     has_session = bool(active_sid)
+    is_admin = user_id in settings.admin_ids
 
     if not has_session:
         await state.clear()
@@ -115,9 +123,12 @@ async def cmd_start(
     text = i18n.get_text("start_welcome", lang=lang)
     await message.answer(
         text,
-        reply_markup=get_start_kb(lang=lang, has_active_session=has_session),
+        reply_markup=get_start_kb(
+            lang=lang, has_active_session=has_session, is_admin=is_admin
+        ),
         parse_mode="Markdown",
     )
+
 
 
 @router.message(Command("lang"))
@@ -157,10 +168,11 @@ async def cb_set_lang(
     await callback.answer(confirm_text)
 
     welcome_text = i18n.get_text("start_welcome", lang=new_lang)
+    is_admin = user_id in settings.admin_ids
     if callback.message:
         await callback.message.edit_text(
             f"{confirm_text}\n\n{welcome_text}",
-            reply_markup=get_start_kb(lang=new_lang),
+            reply_markup=get_start_kb(lang=new_lang, is_admin=is_admin),
             parse_mode="Markdown",
         )
 
@@ -206,6 +218,7 @@ async def cb_back_to_start(
     user_id = user.id if user else 0
     active_sid = await _get_active_session_id(state, r, user_id)
     has_session = bool(active_sid)
+    is_admin = user_id in settings.admin_ids
 
     if not has_session:
         await state.clear()
@@ -213,7 +226,7 @@ async def cb_back_to_start(
         await state.set_state(AppSG.ready_to_clean)
 
     text = i18n.get_text("start_welcome", lang=lang)
-    kb = get_start_kb(lang=lang, has_active_session=has_session)
+    kb = get_start_kb(lang=lang, has_active_session=has_session, is_admin=is_admin)
     if callback.message:
         try:
             await callback.message.edit_text(
@@ -243,6 +256,8 @@ async def msg_start_cleaner_reply_btn(
     user = getattr(message, "from_user", None)
     user_id = user.id if user else 0
     active_sid = await _get_active_session_id(state, r, user_id)
+    is_admin = user_id in settings.admin_ids
+
     if active_sid:
         await state.set_state(AppSG.ready_to_clean)
         scan_result = await ScannerService.get_cached_scan(r, active_sid)
@@ -266,9 +281,12 @@ async def msg_start_cleaner_reply_btn(
     text = i18n.get_text("start_welcome", lang=lang)
     await message.answer(
         text,
-        reply_markup=get_start_kb(lang=lang, has_active_session=bool(active_sid)),
+        reply_markup=get_start_kb(
+            lang=lang, has_active_session=bool(active_sid), is_admin=is_admin
+        ),
         parse_mode="Markdown",
     )
+
 
 
 
@@ -886,6 +904,7 @@ async def cb_run_scan(
                 progress_callback=on_scan_progress,
             )
             await scanner.save_scan_result(r, scan_result)
+            await AnalyticsService.record_scan(r, user_id)
 
             # Build diagnostic report
             dead_total = scan_result.dead_count + scan_result.zombie_count
@@ -1278,6 +1297,13 @@ async def _execute_cleanup(
                 scan_result, clean_result=clean_result, username=uname, lang=lang
             )
             await WrappedService.save_wrapped(redis, stats)
+            await AnalyticsService.record_clean(
+                redis=redis,
+                user_id=user_id,
+                messages=clean_result.messages_marked,
+                folders=len(clean_result.folders_created),
+                hours=stats.hours_saved,
+            )
 
             # Keep session active and restore state so user can continue
             await state.set_state(AppSG.ready_to_clean)
@@ -1383,10 +1409,260 @@ async def cb_session_logout(
     # Fallback / standard logout confirmation
     text = i18n.get_text("logout_confirmed", lang=lang)
     welcome = i18n.get_text("start_welcome", lang=lang)
+    is_admin = user_id in settings.admin_ids
     if callback.message:
         await callback.message.answer(
             f"{text}\n\n{welcome}",
-            reply_markup=get_start_kb(lang=lang, has_active_session=False),
+            reply_markup=get_start_kb(lang=lang, has_active_session=False, is_admin=is_admin),
             parse_mode="Markdown",
         )
     await callback.answer()
+
+
+# --- H. Admin Dashboard & Analytics ---
+
+
+@router.message(Command("admin"))
+@router.message(Command("stats"))
+async def cmd_admin_stats(
+    message: Message,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Display real-time analytics dashboard for authorized administrators."""
+    user = getattr(message, "from_user", None)
+    user_id = user.id if user else 0
+    if user_id not in settings.admin_ids:
+        await message.answer(i18n.get_text("admin_access_denied", lang=lang), parse_mode="Markdown")
+        return
+
+    r = _get_redis(redis)
+    summary = await AnalyticsService.get_summary(r)
+    dashboard_text = AnalyticsService.format_dashboard(summary)
+    kb = get_admin_kb(lang=lang)
+    await message.answer(dashboard_text, reply_markup=kb, parse_mode="Markdown")
+
+
+@router.callback_query(F.data == "admin_panel")
+@router.callback_query(F.data == "admin_refresh")
+async def cb_admin_dashboard(
+    callback: CallbackQuery,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Render or refresh admin dashboard."""
+    user = getattr(callback, "from_user", None)
+    user_id = user.id if user else 0
+    if user_id not in settings.admin_ids:
+        await callback.answer(i18n.get_text("admin_access_denied", lang=lang), show_alert=True)
+        return
+
+    r = _get_redis(redis)
+    summary = await AnalyticsService.get_summary(r)
+    dashboard_text = AnalyticsService.format_dashboard(summary)
+    kb = get_admin_kb(lang=lang)
+
+    if callback.message:
+        try:
+            await callback.message.edit_text(dashboard_text, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            await callback.message.answer(dashboard_text, reply_markup=kb, parse_mode="Markdown")
+    await callback.answer("✅ Данные обновлены!" if callback.data == "admin_refresh" else "")
+
+
+@router.callback_query(F.data == "admin_reviews")
+async def cb_admin_reviews(
+    callback: CallbackQuery,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Display latest user reviews for administrators."""
+    user = getattr(callback, "from_user", None)
+    user_id = user.id if user else 0
+    if user_id not in settings.admin_ids:
+        await callback.answer(i18n.get_text("admin_access_denied", lang=lang), show_alert=True)
+        return
+
+    r = _get_redis(redis)
+    reviews = await AnalyticsService.get_recent_reviews(r, limit=10)
+    reviews_text = AnalyticsService.format_reviews_list(reviews)
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_refresh_stats", lang=lang),
+                    callback_data="admin_reviews",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_admin_panel", lang=lang),
+                    callback_data="admin_panel",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_main_menu", lang=lang),
+                    callback_data="back_to_start",
+                )
+            ],
+        ]
+    )
+
+    if callback.message:
+        try:
+            await callback.message.edit_text(reviews_text, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            await callback.message.answer(reviews_text, reply_markup=kb, parse_mode="Markdown")
+    await callback.answer()
+
+
+# --- I. User Feedback & Ratings Flow ---
+
+
+@router.callback_query(F.data == "leave_feedback")
+async def cb_leave_feedback(
+    callback: CallbackQuery,
+    state: FSMContext,
+    lang: str = "ru",
+) -> None:
+    """Start 5-star rating collection."""
+    await state.set_state(FeedbackSG.waiting_rating)
+    prompt_text = i18n.get_text("feedback_prompt", lang=lang)
+    kb = get_feedback_rating_kb(lang=lang)
+
+    if callback.message:
+        try:
+            await callback.message.edit_text(prompt_text, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            await callback.message.answer(prompt_text, reply_markup=kb, parse_mode="Markdown")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("rate_star:"))
+async def cb_rate_star(
+    callback: CallbackQuery,
+    state: FSMContext,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Handle star rating selection and prompt for optional text comment."""
+    parts = (callback.data or "").split(":")
+    try:
+        rating = int(parts[1])
+    except (IndexError, ValueError):
+        rating = 5
+
+    user = getattr(callback, "from_user", None)
+    user_id = user.id if user else 0
+    username = user.username if user else None
+    r = _get_redis(redis)
+
+    # Save rating immediately (empty comment for now)
+    await AnalyticsService.save_review(
+        redis=r,
+        user_id=user_id,
+        username=username,
+        rating=rating,
+        comment="",
+    )
+
+    await state.update_data(feedback_rating=rating)
+    await state.set_state(FeedbackSG.waiting_comment)
+
+    prompt_comment = i18n.get_text("feedback_stars_saved", lang=lang, rating=rating)
+    kb = get_skip_comment_kb(lang=lang)
+
+    if callback.message:
+        try:
+            await callback.message.edit_text(prompt_comment, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            await callback.message.answer(prompt_comment, reply_markup=kb, parse_mode="Markdown")
+    await callback.answer(f"⭐ {rating}/5")
+
+
+@router.message(FeedbackSG.waiting_comment)
+async def msg_feedback_comment(
+    message: Message,
+    state: FSMContext,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Save user text review comment and return user to main menu."""
+    comment = (message.text or "").strip()
+    data = await state.get_data()
+    rating = data.get("feedback_rating", 5)
+
+    user = getattr(message, "from_user", None)
+    user_id = user.id if user else 0
+    username = user.username if user else None
+    r = _get_redis(redis)
+
+    await AnalyticsService.save_review(
+        redis=r,
+        user_id=user_id,
+        username=username,
+        rating=rating,
+        comment=comment,
+    )
+
+    active_sid = await _get_active_session_id(state, r, user_id)
+    if active_sid:
+        await state.set_state(AppSG.ready_to_clean)
+    else:
+        await state.clear()
+
+    thanks_text = i18n.get_text("feedback_saved_thanks", lang=lang)
+    welcome_text = i18n.get_text("start_welcome", lang=lang)
+    is_admin = user_id in settings.admin_ids
+
+    await message.answer(
+        f"{thanks_text}\n\n{welcome_text}",
+        reply_markup=get_start_kb(
+            lang=lang, has_active_session=bool(active_sid), is_admin=is_admin
+        ),
+        parse_mode="Markdown",
+    )
+
+
+@router.callback_query(F.data == "skip_comment")
+async def cb_skip_comment(
+    callback: CallbackQuery,
+    state: FSMContext,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Skip optional feedback comment and show confirmation."""
+    user = getattr(callback, "from_user", None)
+    user_id = user.id if user else 0
+    r = _get_redis(redis)
+    active_sid = await _get_active_session_id(state, r, user_id)
+
+    if active_sid:
+        await state.set_state(AppSG.ready_to_clean)
+    else:
+        await state.clear()
+
+    thanks_text = i18n.get_text("feedback_saved_thanks", lang=lang)
+    welcome_text = i18n.get_text("start_welcome", lang=lang)
+    is_admin = user_id in settings.admin_ids
+
+    if callback.message:
+        try:
+            await callback.message.edit_text(
+                f"{thanks_text}\n\n{welcome_text}",
+                reply_markup=get_start_kb(
+                    lang=lang, has_active_session=bool(active_sid), is_admin=is_admin
+                ),
+                parse_mode="Markdown",
+            )
+        except Exception:
+            await callback.message.answer(
+                f"{thanks_text}\n\n{welcome_text}",
+                reply_markup=get_start_kb(
+                    lang=lang, has_active_session=bool(active_sid), is_admin=is_admin
+                ),
+                parse_mode="Markdown",
+            )
+    await callback.answer()
+

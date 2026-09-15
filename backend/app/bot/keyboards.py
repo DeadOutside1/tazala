@@ -42,59 +42,50 @@ def get_language_kb() -> InlineKeyboardMarkup:
     )
 
 
-def get_start_kb(lang: str = "ru", has_active_session: bool = False) -> InlineKeyboardMarkup:
+def get_start_kb(
+    lang: str = "ru",
+    has_active_session: bool = False,
+    is_admin: bool = False,
+) -> InlineKeyboardMarkup:
     """
     Initial menu keyboard localized to user language.
     Displays active session options if user is already logged in.
+    Displays admin panel button if user is an authorized admin.
     """
-    if has_active_session:
-        return InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text=i18n.get_text("btn_continue_session", lang=lang),
-                        callback_data="run_scan",
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text=i18n.get_text("btn_clean_folders_only", lang=lang),
-                        callback_data="run_clean:folders_only",
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text=i18n.get_text("btn_logout", lang=lang),
-                        callback_data="session_logout",
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text=i18n.get_text("btn_security", lang=lang),
-                        callback_data="about_security",
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text=i18n.get_text("btn_choose_lang", lang=lang),
-                        callback_data="choose_lang",
-                    )
-                ],
-            ]
-        )
+    rows: list[list[InlineKeyboardButton]] = []
 
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+    if is_admin:
+        rows.append([
+            InlineKeyboardButton(
+                text=i18n.get_text("btn_admin_panel", lang=lang),
+                callback_data="admin_panel",
+            )
+        ])
+
+    if has_active_session:
+        rows.extend([
             [
                 InlineKeyboardButton(
-                    text=i18n.get_text("btn_start_auth", lang=lang),
-                    callback_data="start_auth",
+                    text=i18n.get_text("btn_continue_session", lang=lang),
+                    callback_data="run_scan",
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text=i18n.get_text("btn_phone_auth", lang=lang),
-                    callback_data="start_phone_auth",
+                    text=i18n.get_text("btn_clean_folders_only", lang=lang),
+                    callback_data="run_clean:folders_only",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_leave_feedback", lang=lang),
+                    callback_data="leave_feedback",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_logout", lang=lang),
+                    callback_data="session_logout",
                 )
             ],
             [
@@ -109,8 +100,43 @@ def get_start_kb(lang: str = "ru", has_active_session: bool = False) -> InlineKe
                     callback_data="choose_lang",
                 )
             ],
-        ]
-    )
+        ])
+        return InlineKeyboardMarkup(inline_keyboard=rows)
+
+    rows.extend([
+        [
+            InlineKeyboardButton(
+                text=i18n.get_text("btn_start_auth", lang=lang),
+                callback_data="start_auth",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=i18n.get_text("btn_phone_auth", lang=lang),
+                callback_data="start_phone_auth",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=i18n.get_text("btn_leave_feedback", lang=lang),
+                callback_data="leave_feedback",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=i18n.get_text("btn_security", lang=lang),
+                callback_data="about_security",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=i18n.get_text("btn_choose_lang", lang=lang),
+                callback_data="choose_lang",
+            )
+        ],
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
 
 
 def get_phone_auth_kb(lang: str = "ru") -> InlineKeyboardMarkup:
@@ -307,6 +333,12 @@ def get_clean_completed_kb(lang: str = "ru") -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
+                    text=i18n.get_text("btn_leave_feedback", lang=lang),
+                    callback_data="leave_feedback",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text=i18n.get_text("btn_logout", lang=lang),
                     callback_data="session_logout",
                 ),
@@ -344,9 +376,81 @@ def get_wrapped_kb(session_id: str = "", lang: str = "ru") -> InlineKeyboardMark
             ],
             [
                 InlineKeyboardButton(
+                    text=i18n.get_text("btn_leave_feedback", lang=lang),
+                    callback_data="leave_feedback",
+                )
+            ],
+            [
+                InlineKeyboardButton(
                     text=i18n.get_text("btn_main_menu", lang=lang),
                     callback_data="back_to_start",
                 )
             ],
         ]
     )
+
+
+def get_feedback_rating_kb(lang: str = "ru") -> InlineKeyboardMarkup:
+    """Keyboard with 1 to 5 star ratings."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="⭐ 1", callback_data="rate_star:1"),
+                InlineKeyboardButton(text="⭐ 2", callback_data="rate_star:2"),
+                InlineKeyboardButton(text="⭐ 3", callback_data="rate_star:3"),
+                InlineKeyboardButton(text="⭐ 4", callback_data="rate_star:4"),
+                InlineKeyboardButton(text="⭐ 5", callback_data="rate_star:5"),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_back", lang=lang),
+                    callback_data="back_to_start",
+                )
+            ],
+        ]
+    )
+
+
+def get_skip_comment_kb(lang: str = "ru") -> InlineKeyboardMarkup:
+    """Keyboard allowing user to skip optional text comment."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_skip_comment", lang=lang),
+                    callback_data="skip_comment",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_main_menu", lang=lang),
+                    callback_data="back_to_start",
+                )
+            ],
+        ]
+    )
+
+
+def get_admin_kb(lang: str = "ru") -> InlineKeyboardMarkup:
+    """Admin dashboard actions keyboard."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_refresh_stats", lang=lang),
+                    callback_data="admin_refresh",
+                ),
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_recent_reviews", lang=lang),
+                    callback_data="admin_reviews",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_main_menu", lang=lang),
+                    callback_data="back_to_start",
+                )
+            ],
+        ]
+    )
+

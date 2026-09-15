@@ -15,11 +15,19 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from app.bot.bot import create_bot_and_dispatcher
-from app.bot.handlers import _format_code_slots, cb_session_logout, cmd_start
+from app.bot.handlers import (
+    _format_code_slots,
+    cb_session_logout,
+    cmd_admin_stats,
+    cmd_start,
+)
 from app.bot.keyboards import (
+    get_admin_kb,
     get_clean_completed_kb,
     get_diagnostic_kb,
+    get_feedback_rating_kb,
     get_scan_kb,
+    get_skip_comment_kb,
     get_sms_code_kb,
     get_start_kb,
     get_wrapped_kb,
@@ -59,18 +67,20 @@ def test_format_code_slots():
 
 
 def test_start_keyboard_structure():
-    """Test get_start_kb contains auth, security, and language selection buttons."""
+    """Test get_start_kb contains auth, feedback, security, and language selection buttons."""
     kb = get_start_kb()
-    assert len(kb.inline_keyboard) == 4
+    assert len(kb.inline_keyboard) == 5
     assert kb.inline_keyboard[0][0].callback_data == "start_auth"
     assert kb.inline_keyboard[1][0].callback_data == "start_phone_auth"
-    assert kb.inline_keyboard[2][0].callback_data == "about_security"
-    assert kb.inline_keyboard[3][0].callback_data == "choose_lang"
+    assert kb.inline_keyboard[2][0].callback_data == "leave_feedback"
+    assert kb.inline_keyboard[3][0].callback_data == "about_security"
+    assert kb.inline_keyboard[4][0].callback_data == "choose_lang"
+
 
 
 
 def test_scan_keyboard_structure():
-    """Test get_scan_kb contains run_scan and back_to_start callbacks."""
+    """Test get_scan_kb contains run_scan and back_to_start buttons."""
     kb = get_scan_kb()
     assert len(kb.inline_keyboard) == 2
     assert kb.inline_keyboard[0][0].callback_data == "run_scan"
@@ -90,30 +100,72 @@ def test_diagnostic_keyboard_structure():
 
 
 def test_wrapped_keyboard_structure():
-    """Test get_wrapped_kb contains share URL and back_to_start."""
+    """Test get_wrapped_kb contains share URL, leave_feedback, and back_to_start."""
     kb = get_wrapped_kb(session_id="dummy-sess")
-    assert len(kb.inline_keyboard) == 2
+    assert len(kb.inline_keyboard) == 3
     assert "https://t.me/share/url" in (kb.inline_keyboard[0][0].url or "")
-    assert kb.inline_keyboard[1][0].callback_data == "back_to_start"
+    assert kb.inline_keyboard[1][0].callback_data == "leave_feedback"
+    assert kb.inline_keyboard[2][0].callback_data == "back_to_start"
 
 
 def test_clean_completed_keyboard_structure():
-    """Test get_clean_completed_kb contains folders_only, rescan, logout, and back_to_start."""
+    """Test get_clean_completed_kb contains all required action buttons."""
     kb = get_clean_completed_kb()
-    assert len(kb.inline_keyboard) == 4
+    assert len(kb.inline_keyboard) == 5
     assert kb.inline_keyboard[0][0].callback_data == "run_clean:folders_only"
     assert kb.inline_keyboard[1][0].callback_data == "run_scan"
-    assert kb.inline_keyboard[2][0].callback_data == "session_logout"
-    assert kb.inline_keyboard[3][0].callback_data == "back_to_start"
+    assert kb.inline_keyboard[2][0].callback_data == "leave_feedback"
+    assert kb.inline_keyboard[3][0].callback_data == "session_logout"
+    assert kb.inline_keyboard[4][0].callback_data == "back_to_start"
 
 
 def test_start_keyboard_active_session():
     """Test get_start_kb displays active session buttons when has_active_session=True."""
     kb = get_start_kb(has_active_session=True)
-    assert len(kb.inline_keyboard) == 5
+    assert len(kb.inline_keyboard) == 6
     assert kb.inline_keyboard[0][0].callback_data == "run_scan"
     assert kb.inline_keyboard[1][0].callback_data == "run_clean:folders_only"
-    assert kb.inline_keyboard[2][0].callback_data == "session_logout"
+    assert kb.inline_keyboard[2][0].callback_data == "leave_feedback"
+    assert kb.inline_keyboard[3][0].callback_data == "session_logout"
+
+
+def test_start_keyboard_admin_visibility():
+    """Test get_start_kb shows admin button only when is_admin is True."""
+    user_kb = get_start_kb(is_admin=False)
+    user_buttons = [btn.callback_data for row in user_kb.inline_keyboard for btn in row]
+    assert "admin_panel" not in user_buttons
+
+    admin_kb = get_start_kb(is_admin=True)
+    admin_buttons = [btn.callback_data for row in admin_kb.inline_keyboard for btn in row]
+    assert "admin_panel" in admin_buttons
+
+
+def test_feedback_rating_keyboard_structure():
+    """Test get_feedback_rating_kb has 5 star ratings and a back button."""
+    kb = get_feedback_rating_kb()
+    assert len(kb.inline_keyboard) == 2
+    assert len(kb.inline_keyboard[0]) == 5
+    for i in range(1, 6):
+        assert kb.inline_keyboard[0][i - 1].callback_data == f"rate_star:{i}"
+    assert kb.inline_keyboard[1][0].callback_data == "back_to_start"
+
+
+def test_skip_comment_keyboard_structure():
+    """Test get_skip_comment_kb contains skip comment and main menu buttons."""
+    kb = get_skip_comment_kb()
+    assert len(kb.inline_keyboard) == 2
+    assert kb.inline_keyboard[0][0].callback_data == "skip_comment"
+    assert kb.inline_keyboard[1][0].callback_data == "back_to_start"
+
+
+def test_admin_keyboard_structure():
+    """Test get_admin_kb has refresh stats, reviews, and back buttons."""
+    kb = get_admin_kb()
+    assert len(kb.inline_keyboard) == 2
+    assert kb.inline_keyboard[0][0].callback_data == "admin_refresh"
+    assert kb.inline_keyboard[0][1].callback_data == "admin_reviews"
+    assert kb.inline_keyboard[1][0].callback_data == "back_to_start"
+
 
 
 
@@ -287,3 +339,40 @@ def test_create_bot_and_dispatcher_with_token():
         assert bot is not None
         assert dp is not None
         asyncio.run(bot.session.close())
+
+
+# --- 6. Admin Access Control Tests ---
+
+
+@pytest.mark.asyncio
+async def test_cmd_admin_stats_access_denied_for_non_admin():
+    """Test non-admin user receives access denied message."""
+    mock_msg = AsyncMock(spec=Message)
+    mock_msg.from_user = MagicMock(id=999999999)  # Not in admin_ids
+    mock_msg.answer = AsyncMock()
+
+    with patch.object(settings, "ADMIN_USER_IDS", "8041783822"):
+        await cmd_admin_stats(mock_msg)
+
+    mock_msg.answer.assert_awaited_once()
+    called_text = mock_msg.answer.await_args[0][0]
+    assert "Доступ запрещен" in called_text
+
+
+@pytest.mark.asyncio
+async def test_cmd_admin_stats_allowed_for_admin():
+    """Test authorized admin receives formatted dashboard."""
+    mock_msg = AsyncMock(spec=Message)
+    mock_msg.from_user = MagicMock(id=8041783822)  # Authorized admin
+    mock_msg.answer = AsyncMock()
+    mock_redis = AsyncMock()
+    mock_redis.scard.return_value = 5
+    mock_redis.hgetall.return_value = {}
+
+    with patch.object(settings, "ADMIN_USER_IDS", "8041783822"):
+        await cmd_admin_stats(mock_msg, redis=mock_redis)
+
+    mock_msg.answer.assert_awaited_once()
+    called_text = mock_msg.answer.await_args[0][0]
+    assert "Tazala Admin Dashboard" in called_text
+

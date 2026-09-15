@@ -45,3 +45,8 @@ htmlcov/
 
 # Antigravity
 .gemini/
+
+# Data & Runtime logs
+data/*.jsonl
+backend/data/*.jsonl
+*.jsonl
