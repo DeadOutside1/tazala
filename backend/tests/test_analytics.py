@@ -173,3 +173,20 @@ def test_format_reviews_list_truncation():
     # Truncated comment has 150 chars + "..."
     assert "A" * 150 + "..." in formatted
     assert "A" * 151 not in formatted
+
+
+def test_format_reviews_list_markdown_escaping():
+    """Test usernames and comments with markdown characters are safely escaped."""
+    reviews = [
+        ReviewItem(
+            user_id=2,
+            username="john_doe_99",
+            rating=5,
+            comment="Awesome *bold* & _italic_ bot!",
+            created_at="2026-09-16 00:00:00 UTC",
+        )
+    ]
+    formatted = AnalyticsService.format_reviews_list(reviews)
+    assert r"@john\_doe\_99" in formatted
+    assert r"Awesome \*bold\* & \_italic\_ bot!" in formatted
+

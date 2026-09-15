@@ -1302,7 +1302,7 @@ async def _execute_cleanup(
                 user_id=user_id,
                 messages=clean_result.messages_marked,
                 folders=len(clean_result.folders_created),
-                hours=stats.hours_saved,
+                hours=stats.time_saved_hours,
             )
 
             # Keep session active and restore state so user can continue
@@ -1346,7 +1346,11 @@ async def _execute_cleanup(
         except Exception as e:
             logger.exception("Cleanup failed: %s", e)
             if status_msg:
-                await status_msg.edit_text(f"❌ {e}")
+                try:
+                    await status_msg.edit_text(f"❌ {e}", parse_mode=None)
+                except Exception:
+                    pass
+
         finally:
             try:
                 await client.disconnect()

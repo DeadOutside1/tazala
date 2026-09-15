@@ -18,6 +18,15 @@ DATA_DIR = Path("data")
 REVIEWS_FILE = DATA_DIR / "reviews.jsonl"
 
 
+def _escape_md(text: str) -> str:
+    """Escape Markdown special characters for safe Telegram Markdown rendering."""
+    if not text:
+        return ""
+    for ch in ("\\", "_", "*", "`", "["):
+        text = text.replace(ch, f"\\{ch}")
+    return text
+
+
 class AnalyticsService:
     """Core service for usage analytics, ratings and reviews."""
 
@@ -170,7 +179,7 @@ class AnalyticsService:
     async def get_recent_reviews(redis: Redis, limit: int = 10) -> list[ReviewItem]:
         """Fetch latest unique user reviews from Redis."""
         try:
-            raw_items = await redis.lrange("tazala:recent_reviews", 0, limit * 2) or []
+            raw_items = await redis.lrange("tazala:recent_reviews", 0, 99) or []
             seen_users = set()
             reviews: list[ReviewItem] = []
 
@@ -216,7 +225,7 @@ class AnalyticsService:
     def format_reviews_list(reviews: list[ReviewItem]) -> str:
         """
         Format recent user reviews with safe truncation (<=150 chars per comment)
-        to strictly respect Telegram message length limits.
+        and Markdown special character escaping to strictly prevent formatting crashes.
         """
         if not reviews:
             return "📝 **Отзывы пользователей:**\n\n_Пока нет оставленных отзывов._"
@@ -224,15 +233,19 @@ class AnalyticsService:
         lines = ["📝 **Последние отзывы пользователей:**\n"]
         for idx, rev in enumerate(reviews, 1):
             stars = "⭐" * rev.rating
-            user_label = f"@{rev.username}" if rev.username else f"ID {rev.user_id}"
-            truncated_comment = rev.comment[:150]
-            if len(rev.comment) > 150:
-                truncated_comment += "..."
+            safe_username = _escape_md(rev.username) if rev.username else ""
+            user_label = f"@{safe_username}" if safe_username else f"ID {rev.user_id}"
 
-            comment_str = f"\n💬 _{truncated_comment}_" if truncated_comment else ""
+            raw_comment = rev.comment[:150]
+            safe_comment = _escape_md(raw_comment)
+            if len(rev.comment) > 150:
+                safe_comment += "..."
+
+            comment_str = f"\n💬 _{safe_comment}_" if safe_comment else ""
             lines.append(
                 f"**{idx}. {user_label}** — {stars} ({rev.rating}/5)\n"
                 f"📅 `{rev.created_at}`{comment_str}\n"
             )
 
         return "\n".join(lines)
+
