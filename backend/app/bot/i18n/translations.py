@@ -90,24 +90,21 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "qr_caption": {
         "ru": (
-            "📲 **Отсканируйте QR-код для входа:**\n\n"
-            "1. Откройте **Telegram** на телефоне\n"
-            "2. Перейдите в **Настройки ➔ Устройства ➔ Подключить устройство**\n"
-            "3. Наведите камеру на этот QR-код\n\n"
+            "📲 **Вход в аккаунт Tazala:**\n\n"
+            "• **На телефоне:** Нажмите кнопку ниже «📲 Войти в один клик» для мгновенного входа!\n"
+            "• **Или отсканируйте QR-код:** Настройки ➔ Устройства ➔ Подключить устройство.\n\n"
             "_Код обновляется автоматически каждые 25 секунд._"
         ),
         "kk": (
-            "📲 **Кіру үшін QR-кодты сканерлеңіз:**\n\n"
-            "1. Телефоныңыздан **Telegram** ашыңыз\n"
-            "2. **Баптаулар ➔ Құрылғылар ➔ Құрылғыны қосу** бөліміне өтіңіз\n"
-            "3. Камераны осы QR-кодқа бағыттаңыз\n\n"
+            "📲 **Tazala аккаунтына кіру:**\n\n"
+            "• **Телефонда:** Бірден кіру үшін төмендегі «📲 Бір басуда кіру» батырмасын басыңыз!\n"
+            "• **Немесе QR-кодты сканерлеңіз:** Баптаулар ➔ Құрылғылар ➔ Құрылғыны қосу.\n\n"
             "_Код әр 25 секунд сайын автоматты түрде жаңарады._"
         ),
         "en": (
-            "📲 **Scan QR code to log in:**\n\n"
-            "1. Open **Telegram** on your phone\n"
-            "2. Go to **Settings ➔ Devices ➔ Link Desktop Device**\n"
-            "3. Point your camera at this QR code\n\n"
+            "📲 **Log in to Tazala:**\n\n"
+            "• **On mobile:** Tap the «📲 One-click login» button below for instant login!\n"
+            "• **Or scan QR code:** Settings ➔ Devices ➔ Link Desktop Device.\n\n"
             "_Code refreshes automatically every 25 seconds._"
         ),
     },
@@ -375,19 +372,111 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "sms_code_prompt": {
         "ru": (
-            "🔑 **Введите код подтверждения,** который пришёл в Telegram "
-            "(от аккаунта 777000):\n\n"
+            "🔑 **Введите код подтверждения:**\n\n"
             "_Код будет удалён из чата после обработки._"
         ),
         "kk": (
-            "🔑 **Telegram-нан келген растау кодын жазыңыз** "
-            "(777000 аккаунтынан):\n\n"
+            "🔑 **Растау кодын енгізіңіз:**\n\n"
             "_Код өңделгеннен кейін чаттан өшіріледі._"
         ),
         "en": (
-            "🔑 **Enter the verification code** sent via Telegram "
-            "(from account 777000):\n\n"
+            "🔑 **Enter the verification code:**\n\n"
             "_The code will be deleted from chat after processing._"
+        ),
+    },
+    "sms_code_prompt_app": {
+        "ru": (
+            "📱 **Код отправлен в официальное приложение Telegram (от 777000)!**\n\n"
+            "Проверьте чат с официальным аккаунтом **«Telegram»** на телефоне или компьютере.\n\n"
+            "💡 _Если код не пришёл в 777000, проверьте другие устройства, где открыт Telegram, "
+            "или нажмите «📲 Войти в 1 клик» ниже._\n\n"
+            "_Введите полученный код:_"
+        ),
+        "kk": (
+            "📱 **Растау коды ресми Telegram қосымшасына жіберілді (777000 аккаунтынан)!**\n\n"
+            "Телефоныңыздағы немесе компьютеріңіздегі ресми **«Telegram»** чатын тексеріңіз.\n\n"
+            "💡 _Егер код келмесе, төмендегі «📲 1 басуда кіру» батырмасын басыңыз._\n\n"
+            "_Келген кодты енгізіңіз:_"
+        ),
+        "en": (
+            "📱 **Code sent to your official Telegram app (from 777000)!**\n\n"
+            "Please check the chat with official **«Telegram»** on your phone or PC.\n\n"
+            "💡 _If you don't see it, check other devices where Telegram is active, "
+            "or tap «📲 1-click login» below._\n\n"
+            "_Enter the received code:_"
+        ),
+    },
+    "sms_code_prompt_sms": {
+        "ru": (
+            "📩 **Внимание: Telegram отправил код по SMS!**\n\n"
+            "Код отправлен в **обычном SMS-сообщении** на номер `{phone}` "
+            "(НЕ в чат 777000 в Telegram!).\n\n"
+            "Пожалуйста, проверьте папку входящих **SMS-сообщений** на телефоне.\n\n"
+            "_Введите полученный код:_"
+        ),
+        "kk": (
+            "📩 **Назар аударыңыз: Telegram кодты SMS арқылы жіберді!**\n\n"
+            "Код `{phone}` нөміріне **қарапайым SMS-хабарлама** ретінде жіберілді "
+            "(Telegram 777000 чатына емес!).\n\n"
+            "Телефоныңыздағы **кіріс SMS** хабарламаларын тексеріңіз.\n\n"
+            "_Келген кодты енгізіңіз:_"
+        ),
+        "en": (
+            "📩 **Notice: Telegram sent the code via SMS!**\n\n"
+            "The code was sent as a standard **SMS text message** to `{phone}` "
+            "(NOT in Telegram chat 777000!).\n\n"
+            "Please check your phone's **SMS inbox**.\n\n"
+            "_Enter the received code:_"
+        ),
+    },
+    "sms_code_prompt_email": {
+        "ru": (
+            "📧 **Telegram отправил код на ваш Email!**\n\n"
+            "Проверьте входящие письма (и папку «Спам») на вашей почте, "
+            "привязанной к Telegram.\n\n"
+            "_Введите полученный код:_"
+        ),
+        "kk": (
+            "📧 **Telegram кодты электрондық поштаңызға жіберді!**\n\n"
+            "Telegram-ға тіркелген поштаңыздың кіріс хаттарын тексеріңіз.\n\n"
+            "_Келген кодты енгізіңіз:_"
+        ),
+        "en": (
+            "📧 **Telegram sent the code to your Email!**\n\n"
+            "Please check your inbox (and Spam folder) of the email "
+            "linked to your Telegram account.\n\n"
+            "_Enter the received code:_"
+        ),
+    },
+    "sms_code_prompt_call": {
+        "ru": (
+            "📞 **Telegram выполняет звонок на номер {phone}!**\n\n"
+            "Кодом подтверждения являются последние 5 цифр входящего номера.\n\n"
+            "_Введите полученный код:_"
+        ),
+        "kk": (
+            "📞 **Telegram {phone} нөміріне қоңырау шалуда!**\n\n"
+            "Кіріс нөмірдің соңғы 5 цифры растау коды болып табылады.\n\n"
+            "_Келген кодты енгізіңіз:_"
+        ),
+        "en": (
+            "📞 **Telegram is calling {phone}!**\n\n"
+            "The verification code is the last 5 digits of the incoming number.\n\n"
+            "_Enter the received code:_"
+        ),
+    },
+    "resend_code_unavailable": {
+        "ru": (
+            "⏳ Все каналы доставки Telegram для этого номера временно исчерпаны. "
+            "Подождите 10-15 минут или используйте моментальный вход в 1 клик."
+        ),
+        "kk": (
+            "⏳ Telegram-ның осы нөмір үшін барлық жіберу арналары уақытша шектелді. "
+            "10-15 минут күтіңіз немесе 1 басуда кіру батырмасын қолданыңыз."
+        ),
+        "en": (
+            "⏳ All Telegram delivery channels for this number have been temporarily exhausted. "
+            "Please wait 10-15 minutes or use the instant 1-click login."
         ),
     },
     "phone_auth_success": {

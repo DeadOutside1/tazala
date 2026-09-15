@@ -10,15 +10,35 @@ import logging
 import re
 import uuid
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 
 import qrcode
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
+from telethon.tl import types
 
 from app.auth.schemas import AuthResult, AuthState
 from app.telegram.session_store import SessionStore
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SendCodeResult:
+    """Result of MTProto send_code / resend_code request."""
+
+    phone_code_hash: str
+    delivery_type: str = "app"  # "app" | "sms" | "email" | "call" | "fragment"
+    timeout: int | None = None
+    email_pattern: str | None = None
+
+    def __str__(self) -> str:
+        return self.phone_code_hash
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, str):
+            return self.phone_code_hash == other
+        return super().__eq__(other)
 
 
 class QRAuthService:
@@ -170,29 +190,61 @@ class PhoneAuthService:
         self,
         client: TelegramClient,
         phone: str,
-    ) -> str:
+    ) -> SendCodeResult:
         """
-        Send verification code to user's Telegram account (from 777000).
+        Send verification code to user's Telegram account.
 
         Returns:
-            phone_code_hash needed for sign_in step.
+            SendCodeResult with phone_code_hash, delivery_type, timeout, and email_pattern.
         """
         sanitized_phone = re.sub(r"[^\d+]", "", phone.strip())
         result = await client.send_code_request(sanitized_phone)
         phone_code_hash = result.phone_code_hash
+
+        delivery_type = "app"
+        email_pattern = None
+        t = getattr(result, "type", None)
+        if isinstance(t, types.auth.SentCodeTypeApp):
+            delivery_type = "app"
+        elif isinstance(t, types.auth.SentCodeTypeSms):
+            delivery_type = "sms"
+        elif isinstance(t, types.auth.SentCodeTypeEmailCode):
+            delivery_type = "email"
+        elif isinstance(
+            t,
+            (
+                types.auth.SentCodeTypeCall,
+                types.auth.SentCodeTypeFlashCall,
+                types.auth.SentCodeTypeMissedCall,
+            ),
+        ):
+            delivery_type = "call"
+        elif isinstance(t, types.auth.SentCodeTypeFragmentSms):
+            delivery_type = "fragment"
+        elif t is not None:
+            delivery_type = type(t).__name__.replace("SentCodeType", "").lower()
+
+        timeout = getattr(result, "timeout", None)
         logger.info(
-            "Verification code sent to phone %s...%s",
+            "Verification code sent to %s...%s: delivery=%s, timeout=%s",
             sanitized_phone[:4],
             sanitized_phone[-2:],
+            delivery_type,
+            timeout,
         )
-        return phone_code_hash
+        return SendCodeResult(
+            phone_code_hash=phone_code_hash,
+            delivery_type=delivery_type,
+            timeout=timeout,
+            email_pattern=email_pattern,
+        )
 
     async def resend_code(
         self,
         client: TelegramClient,
         phone: str,
         phone_code_hash: str,
-    ) -> str:
+    ) -> SendCodeResult:
         """Resend verification code via MTProto ResendCodeRequest."""
         from telethon.tl.functions.auth import ResendCodeRequest
 
@@ -204,12 +256,33 @@ class PhoneAuthService:
             )
         )
         new_hash = getattr(result, "phone_code_hash", phone_code_hash)
+        delivery_type = "app"
+        email_pattern = None
+        t = getattr(result, "type", None)
+        if isinstance(t, types.auth.SentCodeTypeApp):
+            delivery_type = "app"
+        elif isinstance(t, types.auth.SentCodeTypeSms):
+            delivery_type = "sms"
+        elif isinstance(t, types.auth.SentCodeTypeEmailCode):
+            delivery_type = "email"
+            email_pattern = getattr(t, "email_pattern", None)
+        elif isinstance(t, (types.auth.SentCodeTypeCall, types.auth.SentCodeTypeFlashCall)):
+            delivery_type = "call"
+        elif t is not None:
+            delivery_type = type(t).__name__.replace("SentCodeType", "").lower()
+
         logger.info(
-            "Resent verification code for %s...%s",
+            "Resent verification code for %s...%s: delivery=%s",
             sanitized_phone[:4],
             sanitized_phone[-2:],
+            delivery_type,
         )
-        return new_hash
+        return SendCodeResult(
+            phone_code_hash=new_hash,
+            delivery_type=delivery_type,
+            timeout=getattr(result, "timeout", None),
+            email_pattern=email_pattern,
+        )
 
     async def sign_in_with_code(
         self,

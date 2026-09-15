@@ -24,6 +24,8 @@ class ClientManager:
             device_model="Desktop",
             system_version="Windows 11",
             app_version="5.5.5 x64",
+            lang_code="ru",
+            system_lang_code="ru-RU",
         )
         client.flood_sleep_threshold = 60
         return client
@@ -41,6 +43,8 @@ class ClientManager:
             device_model="Desktop",
             system_version="Windows 11",
             app_version="5.5.5 x64",
+            lang_code="ru",
+            system_lang_code="ru-RU",
         )
         client.flood_sleep_threshold = 60
         return client

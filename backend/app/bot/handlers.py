@@ -178,6 +178,17 @@ async def cb_start_auth(
     lang: str = "ru",
 ) -> None:
     """Initiate Telethon QR login flow."""
+    # Clean up previous auth client if any
+    data = await state.get_data()
+    prev_session_id = data.get("session_id")
+    if prev_session_id and prev_session_id in _ACTIVE_AUTH_CLIENTS:
+        prev_client = _ACTIVE_AUTH_CLIENTS.pop(prev_session_id, None)
+        if prev_client:
+            try:
+                await prev_client.disconnect()
+            except Exception:
+                pass
+
     session_id = str(uuid.uuid4())
     await state.set_state(AuthSG.waiting_qr_scan)
     await state.update_data(session_id=session_id)
@@ -215,7 +226,13 @@ async def cb_start_auth(
                             text=i18n.get_text("btn_deeplink_login", lang=lang),
                             url=f"tg://login?token={token}",
                         )
-                    ]
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            text=i18n.get_text("btn_main_menu", lang=lang),
+                            callback_data="back_to_start",
+                        )
+                    ],
                 ]
             )
 
@@ -287,6 +304,17 @@ async def cb_start_phone_auth(
     lang: str = "ru",
 ) -> None:
     """Initiate phone number login flow."""
+    # Clean up previous auth client if any
+    data = await state.get_data()
+    prev_session_id = data.get("session_id")
+    if prev_session_id and prev_session_id in _ACTIVE_AUTH_CLIENTS:
+        prev_client = _ACTIVE_AUTH_CLIENTS.pop(prev_session_id, None)
+        if prev_client:
+            try:
+                await prev_client.disconnect()
+            except Exception:
+                pass
+
     session_id = str(uuid.uuid4())
     await state.set_state(AuthSG.waiting_phone_number)
     await state.update_data(session_id=session_id)
@@ -339,22 +367,43 @@ async def msg_phone_number(
     phone_auth = PhoneAuthService(session_store=SessionStore(r))
 
     try:
-        phone_code_hash = await phone_auth.send_code(client, phone)
+        send_res = await phone_auth.send_code(client, phone)
+        phone_code_hash = send_res.phone_code_hash
+        delivery_type = getattr(send_res, "delivery_type", "app")
+        email_pattern = getattr(send_res, "email_pattern", None)
         await state.update_data(
             phone=phone,
             phone_code_hash=phone_code_hash,
+            delivery_type=delivery_type,
         )
         await state.set_state(AuthSG.waiting_sms_code)
+
+        prompt_key = f"sms_code_prompt_{delivery_type}"
+        text_template = i18n.get_text(prompt_key, lang=lang)
+        if text_template == prompt_key:
+            text_template = i18n.get_text("sms_code_prompt", lang=lang)
+
+        prompt_text = text_template.replace("{phone}", phone)
+        if email_pattern and "{email}" in prompt_text:
+            prompt_text = prompt_text.replace("{email}", email_pattern)
+
         await message.answer(
-            i18n.get_text("sms_code_prompt", lang=lang),
+            prompt_text,
             reply_markup=get_sms_code_kb(lang=lang),
             parse_mode="Markdown",
         )
     except Exception as e:
         logger.exception("Failed to send code to %s: %s", phone[:4], e)
-        await message.answer(f"❌ {e}", reply_markup=get_phone_auth_kb(lang=lang))
+        err_msg = str(e)
+        if "SendCodeUnavailable" in type(e).__name__ or "options for this type" in err_msg:
+            err_msg = i18n.get_text("resend_code_unavailable", lang=lang)
+        await message.answer(f"❌ {err_msg}", reply_markup=get_phone_auth_kb(lang=lang))
         await state.clear()
         _ACTIVE_AUTH_CLIENTS.pop(session_id, None)
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
 
 
 @router.callback_query(F.data == "resend_sms_code")
@@ -378,12 +427,30 @@ async def cb_resend_sms_code(
     r = _get_redis(redis)
     phone_auth = PhoneAuthService(session_store=SessionStore(r))
     try:
-        new_hash = await phone_auth.resend_code(client, phone, phone_code_hash)
-        await state.update_data(phone_code_hash=new_hash)
-        await callback.answer(i18n.get_text("code_resent_alert", lang=lang), show_alert=True)
+        resend_res = await phone_auth.resend_code(client, phone, phone_code_hash)
+        new_hash = resend_res.phone_code_hash
+        delivery_type = getattr(resend_res, "delivery_type", "app")
+        await state.update_data(phone_code_hash=new_hash, delivery_type=delivery_type)
+        await callback.answer(i18n.get_text("code_resent_alert", lang=lang), show_alert=False)
+
+        prompt_key = f"sms_code_prompt_{delivery_type}"
+        text_template = i18n.get_text(prompt_key, lang=lang)
+        if text_template == prompt_key:
+            text_template = i18n.get_text("sms_code_prompt", lang=lang)
+        prompt_text = text_template.replace("{phone}", phone)
+
+        if callback.message:
+            await callback.message.answer(
+                f"🔄 {prompt_text}",
+                reply_markup=get_sms_code_kb(lang=lang),
+                parse_mode="Markdown",
+            )
     except Exception as e:
         logger.warning("Failed resending code for session %s: %s", session_id[:8], e)
-        await callback.answer(f"❌ {e}", show_alert=True)
+        err_msg = str(e)
+        if "SendCodeUnavailable" in type(e).__name__ or "options for this type" in err_msg:
+            err_msg = i18n.get_text("resend_code_unavailable", lang=lang)
+        await callback.answer(f"⚠️ {err_msg}", show_alert=True)
 
 
 @router.message(AuthSG.waiting_sms_code)
