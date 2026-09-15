@@ -8,9 +8,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from redis.asyncio import Redis
 
-from app.bot.bot import create_bot_and_dispatcher
+from app.bot.bot import create_bot_and_dispatcher, setup_bot_commands
 from app.config import settings
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 logger = logging.getLogger(__name__)
 
 
@@ -25,6 +29,7 @@ async def lifespan(app: FastAPI):
     bot, dp = create_bot_and_dispatcher(redis=app.state.redis)
     polling_task = None
     if bot and dp:
+        await setup_bot_commands(bot)
         polling_task = asyncio.create_task(dp.start_polling(bot))
         logger.info("Telegram Bot polling started ✅")
 

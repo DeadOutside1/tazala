@@ -40,29 +40,32 @@ def test_start_keyboard_structure():
 
 
 def test_scan_keyboard_structure():
-    """Test get_scan_kb contains run_scan callback."""
+    """Test get_scan_kb contains run_scan and back_to_start callbacks."""
     kb = get_scan_kb()
-    assert len(kb.inline_keyboard) == 1
+    assert len(kb.inline_keyboard) == 2
     assert kb.inline_keyboard[0][0].callback_data == "run_scan"
+    assert kb.inline_keyboard[1][0].callback_data == "back_to_start"
 
 
 def test_diagnostic_keyboard_structure():
-    """Test get_diagnostic_kb renders options with unread count."""
+    """Test get_diagnostic_kb renders options with unread count and back_to_start."""
     kb = get_diagnostic_kb(unread_count=350)
-    assert len(kb.inline_keyboard) == 4
+    assert len(kb.inline_keyboard) == 5
     assert kb.inline_keyboard[0][0].callback_data == "run_clean:all"
     assert "350" in kb.inline_keyboard[0][0].text
     assert kb.inline_keyboard[1][0].callback_data == "run_clean:read_only"
     assert kb.inline_keyboard[2][0].callback_data == "run_clean:folders_only"
     assert kb.inline_keyboard[3][0].callback_data == "session_logout"
+    assert kb.inline_keyboard[4][0].callback_data == "back_to_start"
 
 
 def test_wrapped_keyboard_structure():
-    """Test get_wrapped_kb contains share URL and logout callback."""
+    """Test get_wrapped_kb contains share URL, logout callback, and back_to_start."""
     kb = get_wrapped_kb(session_id="dummy-sess")
-    assert len(kb.inline_keyboard) == 2
+    assert len(kb.inline_keyboard) == 3
     assert "https://t.me/share/url" in (kb.inline_keyboard[0][0].url or "")
     assert kb.inline_keyboard[1][0].callback_data == "session_logout"
+    assert kb.inline_keyboard[2][0].callback_data == "back_to_start"
 
 
 # --- 2. ThrottledMessageEditor Tests ---

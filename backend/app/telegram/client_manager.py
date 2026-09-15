@@ -21,9 +21,9 @@ class ClientManager:
             StringSession(""),
             settings.TELEGRAM_API_ID,
             settings.TELEGRAM_API_HASH,
-            device_model="Tazala Detox",
-            system_version="1.0",
-            app_version="1.0.0",
+            device_model="Desktop",
+            system_version="Windows 11",
+            app_version="5.5.5 x64",
         )
         client.flood_sleep_threshold = 60
         return client
@@ -38,9 +38,9 @@ class ClientManager:
             StringSession(session_string),
             settings.TELEGRAM_API_ID,
             settings.TELEGRAM_API_HASH,
-            device_model="Tazala Detox",
-            system_version="1.0",
-            app_version="1.0.0",
+            device_model="Desktop",
+            system_version="Windows 11",
+            app_version="5.5.5 x64",
         )
         client.flood_sleep_threshold = 60
         return client

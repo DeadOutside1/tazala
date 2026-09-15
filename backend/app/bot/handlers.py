@@ -26,7 +26,9 @@ from app.bot.keyboards import (
     get_diagnostic_kb,
     get_folder_selection_kb,
     get_language_kb,
+    get_phone_auth_kb,
     get_scan_kb,
+    get_sms_code_kb,
     get_start_kb,
     get_wrapped_kb,
 )
@@ -61,6 +63,13 @@ def _get_redis(redis_instance: Redis | None = None) -> Redis:
 
 @router.message(CommandStart())
 @router.message(Command("help"))
+@router.message(Command("menu"))
+@router.message(
+    F.text.casefold().in_({
+        "menu", "меню", "мәзір", "главное меню",
+        "басты мәзір", "main menu", "старт", "start",
+    })
+)
 async def cmd_start(message: Message, state: FSMContext, lang: str = "ru") -> None:
     """Welcome user and explain Tazala mission."""
     await state.clear()
@@ -289,6 +298,7 @@ async def cb_start_phone_auth(
     if callback.message:
         await callback.message.answer(
             i18n.get_text("phone_prompt", lang=lang),
+            reply_markup=get_phone_auth_kb(lang=lang),
             parse_mode="Markdown",
         )
     await callback.answer()
@@ -311,6 +321,7 @@ async def msg_phone_number(
     if not phone.startswith("+") or not re.match(r"^\+\d{7,15}$", phone):
         await message.answer(
             i18n.get_text("phone_invalid_format", lang=lang),
+            reply_markup=get_phone_auth_kb(lang=lang),
             parse_mode="Markdown",
         )
         return
@@ -336,13 +347,43 @@ async def msg_phone_number(
         await state.set_state(AuthSG.waiting_sms_code)
         await message.answer(
             i18n.get_text("sms_code_prompt", lang=lang),
+            reply_markup=get_sms_code_kb(lang=lang),
             parse_mode="Markdown",
         )
     except Exception as e:
         logger.exception("Failed to send code to %s: %s", phone[:4], e)
-        await message.answer(f"❌ {e}")
+        await message.answer(f"❌ {e}", reply_markup=get_phone_auth_kb(lang=lang))
         await state.clear()
         _ACTIVE_AUTH_CLIENTS.pop(session_id, None)
+
+
+@router.callback_query(F.data == "resend_sms_code")
+async def cb_resend_sms_code(
+    callback: CallbackQuery,
+    state: FSMContext,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Resend verification code via Telegram MTProto."""
+    data = await state.get_data()
+    session_id = data.get("session_id", "")
+    phone = data.get("phone", "")
+    phone_code_hash = data.get("phone_code_hash", "")
+    client = _ACTIVE_AUTH_CLIENTS.get(session_id)
+
+    if not client or not phone or not phone_code_hash:
+        await callback.answer(i18n.get_text("session_not_found", lang=lang), show_alert=True)
+        return
+
+    r = _get_redis(redis)
+    phone_auth = PhoneAuthService(session_store=SessionStore(r))
+    try:
+        new_hash = await phone_auth.resend_code(client, phone, phone_code_hash)
+        await state.update_data(phone_code_hash=new_hash)
+        await callback.answer(i18n.get_text("code_resent_alert", lang=lang), show_alert=True)
+    except Exception as e:
+        logger.warning("Failed resending code for session %s: %s", session_id[:8], e)
+        await callback.answer(f"❌ {e}", show_alert=True)
 
 
 @router.message(AuthSG.waiting_sms_code)
@@ -398,8 +439,10 @@ async def msg_sms_code(
             parse_mode="Markdown",
         )
     else:
+        err_msg = result.error or i18n.get_text("phone_auth_error", lang=lang)
         await message.answer(
-            i18n.get_text("phone_auth_error", lang=lang),
+            f"❌ **{err_msg}**",
+            reply_markup=get_sms_code_kb(lang=lang),
             parse_mode="Markdown",
         )
 
@@ -934,6 +977,11 @@ async def cb_session_logout(
         await session_store.destroy(session_id, client)
 
     text = i18n.get_text("logout_confirmed", lang=lang)
+    welcome = i18n.get_text("start_welcome", lang=lang)
     if callback.message:
-        await callback.message.answer(text, parse_mode="Markdown")
+        await callback.message.answer(
+            f"{text}\n\n{welcome}",
+            reply_markup=get_start_kb(lang=lang),
+            parse_mode="Markdown",
+        )
     await callback.answer()

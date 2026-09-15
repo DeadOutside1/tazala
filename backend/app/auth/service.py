@@ -187,6 +187,30 @@ class PhoneAuthService:
         )
         return phone_code_hash
 
+    async def resend_code(
+        self,
+        client: TelegramClient,
+        phone: str,
+        phone_code_hash: str,
+    ) -> str:
+        """Resend verification code via MTProto ResendCodeRequest."""
+        from telethon.tl.functions.auth import ResendCodeRequest
+
+        sanitized_phone = re.sub(r"[^\d+]", "", phone.strip())
+        result = await client(
+            ResendCodeRequest(
+                phone_number=sanitized_phone,
+                phone_code_hash=phone_code_hash,
+            )
+        )
+        new_hash = getattr(result, "phone_code_hash", phone_code_hash)
+        logger.info(
+            "Resent verification code for %s...%s",
+            sanitized_phone[:4],
+            sanitized_phone[-2:],
+        )
+        return new_hash
+
     async def sign_in_with_code(
         self,
         client: TelegramClient,

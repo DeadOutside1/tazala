@@ -422,6 +422,46 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "kk": "📲 Бір басуда кіру",
         "en": "📲 One-click login",
     },
+    "btn_main_menu": {
+        "ru": "🏠 В главное меню",
+        "kk": "🏠 Басты мәзір",
+        "en": "🏠 Main menu",
+    },
+    "menu_btn_main": {
+        "ru": "🏠 Главное меню",
+        "kk": "🏠 Басты мәзір",
+        "en": "🏠 Main menu",
+    },
+    "menu_btn_scan": {
+        "ru": "⚡ Начать очистку",
+        "kk": "⚡ Тазартуды бастау",
+        "en": "⚡ Start cleaner",
+    },
+    "menu_btn_lang": {
+        "ru": "🌐 Сменить язык",
+        "kk": "🌐 Тілді ауыстыру",
+        "en": "🌐 Change language",
+    },
+    "menu_btn_help": {
+        "ru": "🔒 Безопасность",
+        "kk": "🔒 Қауіпсіздік",
+        "en": "🔒 Security",
+    },
+    "btn_resend_code": {
+        "ru": "🔄 Отправить код повторно",
+        "kk": "🔄 Кодты қайта жіберу",
+        "en": "🔄 Resend code",
+    },
+    "btn_switch_to_qr": {
+        "ru": "📲 Войти в 1 клик (без кода)",
+        "kk": "📲 1 басуда кіру (кодсыз)",
+        "en": "📲 1-click login (no code)",
+    },
+    "code_resent_alert": {
+        "ru": "✅ Запрос на отправку кода повторен!",
+        "kk": "✅ Қайта жіберу сұрауы жіберілді!",
+        "en": "✅ Verification code resent!",
+    },
 
     # --- Folder Selection ---
     "folder_selection_title": {

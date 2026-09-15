@@ -477,3 +477,21 @@ async def test_phone_and_code_sanitization(session_store: SessionStore):
     )
 
 
+@pytest.mark.asyncio
+async def test_phone_resend_code(session_store: SessionStore):
+    """Test resend_code calls ResendCodeRequest on client."""
+    from app.auth.service import PhoneAuthService
+
+    service = PhoneAuthService(session_store=session_store)
+    mock_client = AsyncMock()
+    mock_res = MagicMock()
+    mock_res.phone_code_hash = "new_hash_999"
+    mock_client.return_value = mock_res
+
+    new_hash = await service.resend_code(mock_client, "+7 700 123 45 67", "old_hash_111")
+
+    assert new_hash == "new_hash_999"
+    mock_client.assert_awaited_once()
+
+
+
