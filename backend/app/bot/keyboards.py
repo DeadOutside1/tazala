@@ -4,6 +4,7 @@ Multilingual inline keyboards for Tazala Bot UI.
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.bot.i18n.manager import i18n
+from app.cleaner.schemas import FolderRule
 
 
 def get_language_kb() -> InlineKeyboardMarkup:
@@ -26,6 +27,12 @@ def get_start_kb(lang: str = "ru") -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text=i18n.get_text("btn_start_auth", lang=lang),
                     callback_data="start_auth",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_phone_auth", lang=lang),
+                    callback_data="start_phone_auth",
                 )
             ],
             [
@@ -89,6 +96,54 @@ def get_diagnostic_kb(unread_count: int, lang: str = "ru") -> InlineKeyboardMark
             ],
         ]
     )
+
+
+def get_folder_selection_kb(
+    available_folders: list[FolderRule],
+    selected_emojis: set[str],
+    lang: str = "ru",
+) -> InlineKeyboardMarkup:
+    """Interactive checkbox keyboard for folder category selection."""
+    rows: list[list[InlineKeyboardButton]] = []
+
+    for rule in available_folders:
+        check = "✅" if rule.emoji in selected_emojis else "⬜"
+        rows.append([
+            InlineKeyboardButton(
+                text=f"{check} {rule.title}",
+                callback_data=f"toggle_folder:{rule.emoji}",
+            )
+        ])
+
+    # Select all / Deselect all
+    rows.append([
+        InlineKeyboardButton(
+            text=i18n.get_text("btn_select_all_folders", lang=lang),
+            callback_data="select_all_folders",
+        ),
+        InlineKeyboardButton(
+            text=i18n.get_text("btn_deselect_all_folders", lang=lang),
+            callback_data="deselect_all_folders",
+        ),
+    ])
+
+    # Confirm button
+    rows.append([
+        InlineKeyboardButton(
+            text=i18n.get_text("btn_confirm_folders", lang=lang),
+            callback_data="confirm_folders",
+        )
+    ])
+
+    # Back button
+    rows.append([
+        InlineKeyboardButton(
+            text=i18n.get_text("btn_back", lang=lang),
+            callback_data="back_to_diagnostic",
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def get_wrapped_kb(session_id: str, lang: str = "ru") -> InlineKeyboardMarkup:

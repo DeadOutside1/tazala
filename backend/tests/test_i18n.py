@@ -64,7 +64,7 @@ def test_folder_presets_length_limit(lang: str):
     Verify that all smart folder preset titles across kk, ru, and en respect this constraint.
     """
     rules = CleanerService.get_smart_folder_presets(lang=lang)
-    assert len(rules) == 4, f"Expected 4 folder rules for '{lang}', got {len(rules)}"
+    assert len(rules) == 7, f"Expected 7 folder rules for '{lang}', got {len(rules)}"
 
     for rule in rules:
         title = rule.title

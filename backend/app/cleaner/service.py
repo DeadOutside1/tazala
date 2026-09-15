@@ -33,6 +33,33 @@ def get_smart_folder_presets(lang: str = "ru") -> list[FolderRule]:
                 keywords=["news", "media", "digest", "жаңалық", "хабар", "ақпарат"],
             ),
             FolderRule(
+                title="💰 Қаржы",
+                emoji="💰",
+                categories=[ChatType.CHANNEL, ChatType.GROUP],
+                keywords=[
+                    "crypto", "btc", "eth", "крипта", "трейдинг",
+                    "инвестиции", "money", "bank", "акции", "finance",
+                ],
+            ),
+            FolderRule(
+                title="📚 Оқу",
+                emoji="📚",
+                categories=[ChatType.CHANNEL, ChatType.GROUP],
+                keywords=[
+                    "курсы", "книги", "study", "education", "english",
+                    "лекции", "сабақ", "оқу", "course",
+                ],
+            ),
+            FolderRule(
+                title="🎮 Ойын-сауық",
+                emoji="🎮",
+                categories=[ChatType.CHANNEL, ChatType.GROUP],
+                keywords=[
+                    "мемы", "юмор", "кино", "музыка", "games",
+                    "развлечения", "мем", "fun", "movie",
+                ],
+            ),
+            FolderRule(
                 title="💬 Жеке",
                 emoji="💬",
                 categories=[ChatType.USER],
@@ -60,6 +87,33 @@ def get_smart_folder_presets(lang: str = "ru") -> list[FolderRule]:
                 keywords=["news", "media", "digest", "daily", "times"],
             ),
             FolderRule(
+                title="💰 Finance",
+                emoji="💰",
+                categories=[ChatType.CHANNEL, ChatType.GROUP],
+                keywords=[
+                    "crypto", "btc", "eth", "trading", "invest",
+                    "money", "bank", "stocks", "finance",
+                ],
+            ),
+            FolderRule(
+                title="📚 Study",
+                emoji="📚",
+                categories=[ChatType.CHANNEL, ChatType.GROUP],
+                keywords=[
+                    "course", "book", "study", "education", "english",
+                    "lecture", "learn", "tutorial",
+                ],
+            ),
+            FolderRule(
+                title="🎮 Fun",
+                emoji="🎮",
+                categories=[ChatType.CHANNEL, ChatType.GROUP],
+                keywords=[
+                    "memes", "humor", "movie", "music", "games",
+                    "fun", "entertainment",
+                ],
+            ),
+            FolderRule(
                 title="💬 Personal",
                 emoji="💬",
                 categories=[ChatType.USER],
@@ -84,7 +138,34 @@ def get_smart_folder_presets(lang: str = "ru") -> list[FolderRule]:
             title="📰 Новости",
             emoji="📰",
             categories=[ChatType.CHANNEL],
-            keywords=["news", "media", "digest", "инфо", "новости"],
+            keywords=["news", "media", "digest", "инфо", "новости", "сми"],
+        ),
+        FolderRule(
+            title="💰 Финансы",
+            emoji="💰",
+            categories=[ChatType.CHANNEL, ChatType.GROUP],
+            keywords=[
+                "крипта", "crypto", "btc", "eth", "трейдинг",
+                "инвестиции", "money", "bank", "акции", "finance",
+            ],
+        ),
+        FolderRule(
+            title="📚 Обучение",
+            emoji="📚",
+            categories=[ChatType.CHANNEL, ChatType.GROUP],
+            keywords=[
+                "курсы", "книги", "study", "education", "english",
+                "лекции", "course", "learn",
+            ],
+        ),
+        FolderRule(
+            title="🎮 Мемы/Лайф",
+            emoji="🎮",
+            categories=[ChatType.CHANNEL, ChatType.GROUP],
+            keywords=[
+                "мемы", "юмор", "кино", "музыка", "games",
+                "развлечения", "мем", "fun",
+            ],
         ),
         FolderRule(
             title="💬 Личные",
@@ -109,6 +190,27 @@ class CleanerService:
 
     get_smart_folder_presets = staticmethod(get_smart_folder_presets)
 
+    @staticmethod
+    async def build_peer_map(client: TelegramClient) -> dict[int, object]:
+        """
+        Force-populate Telethon's internal entity cache by calling get_dialogs().
+        Returns a mapping of dialog_id -> InputPeer with valid access_hash.
+        This is CRITICAL for ephemeral StringSession clients where the cache is empty.
+        """
+        peer_map: dict[int, object] = {}
+        try:
+            raw_dialogs = await client.get_dialogs(limit=None)
+            for d in raw_dialogs:
+                try:
+                    if hasattr(d, "input_entity") and d.input_entity:
+                        peer_map[d.id] = d.input_entity
+                except Exception:
+                    pass
+            logger.info("Entity cache populated: %d peers resolved", len(peer_map))
+        except Exception as e:
+            logger.warning("Failed to populate entity cache: %s", e)
+        return peer_map
+
     async def mark_all_as_read(
         self,
         client: TelegramClient,
@@ -116,6 +218,7 @@ class CleanerService:
         progress_callback: Callable[[CleanProgress], Awaitable[None]] | None = None,
         delay: float = 0.5,
         session_id: str = "",
+        peer_map: dict[int, object] | None = None,
     ) -> int:
         """Mark unread dialogs as read safely using FloodSafeExecutor."""
         unread_dialogs = [d for d in dialogs if d.unread_count > 0]
@@ -130,9 +233,10 @@ class CleanerService:
 
         for i, dialog in enumerate(unread_dialogs, 1):
             try:
-                target_id = dialog.id
+                # Use peer_map InputPeer (has access_hash) instead of bare int ID
+                target = peer_map.get(dialog.id, dialog.id) if peer_map else dialog.id
                 await FloodSafeExecutor.execute(
-                    lambda tid=target_id: client.send_read_acknowledge(tid),
+                    lambda t=target: client.send_read_acknowledge(t),
                     default_delay=delay,
                 )
                 total_messages_marked += dialog.unread_count
@@ -155,6 +259,12 @@ class CleanerService:
                     )
                 )
 
+        logger.info(
+            "mark_all_as_read complete: %d chats, %d messages in session %s",
+            total,
+            total_messages_marked,
+            session_id[:8],
+        )
         return total_messages_marked
 
     async def create_smart_folders(
@@ -164,10 +274,15 @@ class CleanerService:
         progress_callback: Callable[[CleanProgress], Awaitable[None]] | None = None,
         session_id: str = "",
         lang: str = "ru",
+        peer_map: dict[int, object] | None = None,
+        selected_emojis: set[str] | None = None,
     ) -> list[str]:
         """
         Create categorized smart folders up to Telegram limits without overriding user folders.
         Free Telegram accounts allow up to 10 folders (IDs 2-10).
+
+        Args:
+            selected_emojis: If provided, only create folders whose emoji is in this set.
         """
         created_folders: list[str] = []
 
@@ -189,6 +304,11 @@ class CleanerService:
         # Available folder IDs between 2 and 10 (0 and 1 are reserved)
         available_ids = [fid for fid in range(2, 11) if fid not in used_ids]
         presets = get_smart_folder_presets(lang)
+
+        # Filter presets by user selection if provided
+        if selected_emojis is not None:
+            presets = [r for r in presets if r.emoji in selected_emojis]
+
         total_presets = len(presets)
 
         for rule in presets:
@@ -209,7 +329,7 @@ class CleanerService:
                 elif rule.emoji == "💬":
                     if d.type == ChatType.USER:
                         matching.append(d)
-                elif rule.emoji in ("💼", "📰"):
+                elif rule.emoji in ("💼", "📰", "💰", "📚", "🎮"):
                     if d.type in rule.categories:
                         title_lower = d.title.lower()
                         if any(kw in title_lower for kw in rule.keywords):
@@ -223,7 +343,10 @@ class CleanerService:
             include_peers = []
             for d in candidates:
                 try:
-                    peer = await client.get_input_entity(d.id)
+                    # Use peer_map for pre-resolved InputPeer (avoids ValueError)
+                    peer = peer_map.get(d.id) if peer_map else None
+                    if peer is None:
+                        peer = await client.get_input_entity(d.id)
                     if peer:
                         include_peers.append(peer)
                 except Exception as e:
@@ -283,6 +406,11 @@ class CleanerService:
         start_time = loop.time()
         sid = scan_result.session_id
 
+        # CRITICAL: Force-populate entity cache for ephemeral StringSession clients.
+        # Without this, send_read_acknowledge() and get_input_entity() fail with
+        # "Could not find input entity" because the cache has no access_hash entries.
+        peer_map = await self.build_peer_map(client)
+
         messages_marked = 0
         folders_created: list[str] = []
 
@@ -293,15 +421,22 @@ class CleanerService:
                 progress_callback=progress_callback,
                 delay=config.delay_per_dialog,
                 session_id=sid,
+                peer_map=peer_map,
             )
 
         if config.create_folders:
+            # Convert selected_folders list to set of emojis for filtering
+            selected_emojis = (
+                set(config.selected_folders) if config.selected_folders else None
+            )
             folders_created = await self.create_smart_folders(
                 client=client,
                 dialogs=scan_result.dialogs,
                 progress_callback=progress_callback,
                 session_id=sid,
                 lang=lang,
+                peer_map=peer_map,
+                selected_emojis=selected_emojis,
             )
 
         session_destroyed = False

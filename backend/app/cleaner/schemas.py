@@ -39,6 +39,7 @@ class CleanConfig(BaseModel):
     create_folders: bool = True
     auto_logout: bool = False
     delay_per_dialog: float = 0.5
+    selected_folders: list[str] = Field(default_factory=list)
 
 
 class CleanProgress(BaseModel):

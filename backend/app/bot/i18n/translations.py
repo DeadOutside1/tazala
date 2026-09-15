@@ -349,6 +349,113 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "kk": "🌐 Тілді таңдаңыз:",
         "en": "🌐 Choose your language:",
     },
+
+    # --- Phone Auth ---
+    "btn_phone_auth": {
+        "ru": "📱 Войти по номеру телефона",
+        "kk": "📱 Телефон нөмірімен кіру",
+        "en": "📱 Log in with phone number",
+    },
+    "phone_prompt": {
+        "ru": (
+            "📱 **Введите ваш номер телефона** в международном формате:\n\n"
+            "Пример: `+77001234567`\n\n"
+            "_Вы получите 5-значный код подтверждения в Telegram от аккаунта 777000._"
+        ),
+        "kk": (
+            "📱 **Телефон нөміріңізді** халықаралық форматта жазыңыз:\n\n"
+            "Мысалы: `+77001234567`\n\n"
+            "_Telegram-дағы 777000 аккаунтынан 5 санды растау коды келеді._"
+        ),
+        "en": (
+            "📱 **Enter your phone number** in international format:\n\n"
+            "Example: `+77001234567`\n\n"
+            "_You will receive a 5-digit verification code in Telegram from account 777000._"
+        ),
+    },
+    "sms_code_prompt": {
+        "ru": (
+            "🔑 **Введите код подтверждения,** который пришёл в Telegram "
+            "(от аккаунта 777000):\n\n"
+            "_Код будет удалён из чата после обработки._"
+        ),
+        "kk": (
+            "🔑 **Telegram-нан келген растау кодын жазыңыз** "
+            "(777000 аккаунтынан):\n\n"
+            "_Код өңделгеннен кейін чаттан өшіріледі._"
+        ),
+        "en": (
+            "🔑 **Enter the verification code** sent via Telegram "
+            "(from account 777000):\n\n"
+            "_The code will be deleted from chat after processing._"
+        ),
+    },
+    "phone_auth_success": {
+        "ru": (
+            "✅ **Вы успешно вошли по номеру телефона!**\n\n"
+            "Сессия защищена в памяти Redis. Нажмите кнопку ниже, чтобы "
+            "просканировать завал в Telegram:"
+        ),
+        "kk": (
+            "✅ **Телефон нөмірі арқылы сәтті кірдіңіз!**\n\n"
+            "Сессия Redis жадында қорғалған. Telegram-дағы завалды "
+            "бағалау үшін төмендегі батырманы басыңыз:"
+        ),
+        "en": (
+            "✅ **Successfully logged in with phone number!**\n\n"
+            "Session secured in Redis RAM. Click below to inspect your "
+            "Telegram clutter:"
+        ),
+    },
+    "phone_auth_error": {
+        "ru": "❌ **Ошибка входа.** Проверьте код и попробуйте снова, или начните с /start",
+        "kk": "❌ **Кіру қатесі.** Кодты тексеріп, қайта жіберіңіз немесе /start басыңыз",
+        "en": "❌ **Login error.** Please check the code and try again, or restart with /start",
+    },
+    "phone_invalid_format": {
+        "ru": "❌ Номер должен начинаться с `+` и содержать цифры. Пример: `+77001234567`",
+        "kk": "❌ Нөмір `+` белгісінен басталуы тиіс. Мысалы: `+77001234567`",
+        "en": "❌ Number must start with `+` and contain digits. Example: `+77001234567`",
+    },
+    "btn_deeplink_login": {
+        "ru": "📲 Войти в один клик",
+        "kk": "📲 Бір басуда кіру",
+        "en": "📲 One-click login",
+    },
+
+    # --- Folder Selection ---
+    "folder_selection_title": {
+        "ru": (
+            "📁 **Выберите категории для смарт-папок:**\n\n"
+            "Нажимайте на кнопки, чтобы включить (✅) или выключить (⬜) категории.\n"
+            "Затем нажмите «Создать папки»."
+        ),
+        "kk": (
+            "📁 **Смарт-папка категорияларын таңдаңыз:**\n\n"
+            "Батырмаларды басып, категорияларды қосыңыз (✅) немесе өшіріңіз (⬜).\n"
+            "Содан кейін «Папкаларды құру» батырмасын басыңыз."
+        ),
+        "en": (
+            "📁 **Select smart folder categories:**\n\n"
+            "Tap buttons to enable (✅) or disable (⬜) categories.\n"
+            "Then press «Create folders»."
+        ),
+    },
+    "btn_confirm_folders": {
+        "ru": "🧹 Создать выбранные папки",
+        "kk": "🧹 Таңдалған папкаларды құру",
+        "en": "🧹 Create selected folders",
+    },
+    "btn_select_all_folders": {
+        "ru": "☑️ Все",
+        "kk": "☑️ Барлық",
+        "en": "☑️ All",
+    },
+    "btn_deselect_all_folders": {
+        "ru": "🔲 Сброс",
+        "kk": "🔲 Тазарту",
+        "en": "🔲 None",
+    },
 }
 
 # Archetype metadata for all languages

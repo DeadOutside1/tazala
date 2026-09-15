@@ -9,6 +9,8 @@ class AuthSG(StatesGroup):
 
     waiting_qr_scan = State()
     waiting_2fa_password = State()
+    waiting_phone_number = State()
+    waiting_sms_code = State()
 
 
 class AppSG(StatesGroup):
@@ -17,4 +19,5 @@ class AppSG(StatesGroup):
     authenticated = State()
     scanning = State()
     ready_to_clean = State()
+    selecting_folders = State()
     cleaning = State()

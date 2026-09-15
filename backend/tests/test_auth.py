@@ -333,3 +333,147 @@ async def test_complete_2fa_wrong_password(session_store: SessionStore):
     assert result.state == AuthState.FAILED
     assert "Invalid 2FA password" in (result.error or "")
     session_store.redis.setex.assert_not_awaited()
+
+
+# --- 5. PhoneAuthService Tests ---
+
+
+@pytest.mark.asyncio
+async def test_phone_send_code(session_store: SessionStore):
+    """Test send_code calls send_code_request and returns phone_code_hash."""
+    from app.auth.service import PhoneAuthService
+
+    service = PhoneAuthService(session_store=session_store)
+
+    mock_client = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.phone_code_hash = "abc123hash"
+    mock_client.send_code_request = AsyncMock(return_value=mock_result)
+
+    phone_code_hash = await service.send_code(mock_client, "+77001234567")
+
+    assert phone_code_hash == "abc123hash"
+    mock_client.send_code_request.assert_awaited_once_with("+77001234567")
+
+
+@pytest.mark.asyncio
+async def test_phone_sign_in_success(session_store: SessionStore):
+    """Test successful phone sign-in persists session."""
+    from app.auth.service import PhoneAuthService
+
+    service = PhoneAuthService(session_store=session_store)
+
+    mock_client = AsyncMock()
+    mock_client.sign_in = AsyncMock()
+    mock_me = MagicMock()
+    mock_me.id = 554433
+    mock_me.username = "phone_user"
+    mock_client.get_me = AsyncMock(return_value=mock_me)
+    mock_client.session.save = MagicMock(return_value="phone_session_str")
+
+    result = await service.sign_in_with_code(
+        client=mock_client,
+        phone="+77001234567",
+        code="12345",
+        phone_code_hash="abc123hash",
+        session_id="phone-sess-1",
+    )
+
+    assert result.state == AuthState.AUTHENTICATED
+    assert result.user_id == 554433
+    assert result.username == "phone_user"
+    mock_client.sign_in.assert_awaited_once_with(
+        phone="+77001234567", code="12345", phone_code_hash="abc123hash",
+    )
+    session_store.redis.setex.assert_awaited_once_with(
+        "session:phone-sess-1", 300, "phone_session_str",
+    )
+
+
+@pytest.mark.asyncio
+async def test_phone_sign_in_2fa_required(session_store: SessionStore):
+    """Test phone sign-in returns TWO_FA_REQUIRED when 2FA is enabled."""
+    from app.auth.service import PhoneAuthService
+
+    service = PhoneAuthService(session_store=session_store)
+
+    mock_client = AsyncMock()
+    mock_client.sign_in = AsyncMock(
+        side_effect=SessionPasswordNeededError(request=None),
+    )
+
+    result = await service.sign_in_with_code(
+        client=mock_client,
+        phone="+77001234567",
+        code="12345",
+        phone_code_hash="abc123hash",
+        session_id="phone-sess-2fa",
+    )
+
+    assert result.state == AuthState.TWO_FA_REQUIRED
+    session_store.redis.setex.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_phone_sign_in_wrong_code(session_store: SessionStore):
+    """Test phone sign-in with wrong code returns FAILED."""
+    from app.auth.service import PhoneAuthService
+
+    service = PhoneAuthService(session_store=session_store)
+
+    mock_client = AsyncMock()
+    mock_client.sign_in = AsyncMock(
+        side_effect=ValueError("The confirmation code is invalid"),
+    )
+
+    result = await service.sign_in_with_code(
+        client=mock_client,
+        phone="+77001234567",
+        code="99999",
+        phone_code_hash="abc123hash",
+        session_id="phone-sess-fail",
+    )
+
+    assert result.state == AuthState.FAILED
+    assert "invalid" in (result.error or "").lower()
+    session_store.redis.setex.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_phone_and_code_sanitization(session_store: SessionStore):
+    """Verify phone and verification code are properly sanitized (spaces, dashes, parens)."""
+    from app.auth.service import PhoneAuthService
+
+    service = PhoneAuthService(session_store=session_store)
+
+    mock_client = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.phone_code_hash = "hash_clean"
+    mock_client.send_code_request = AsyncMock(return_value=mock_result)
+
+    # 1. Test phone sanitization in send_code
+    await service.send_code(mock_client, " +7 (700) 123-45-67 ")
+    mock_client.send_code_request.assert_awaited_once_with("+77001234567")
+
+    # 2. Test phone and code sanitization in sign_in_with_code
+    mock_client.sign_in = AsyncMock()
+    mock_me = MagicMock(id=111, username="clean_user")
+    mock_client.get_me = AsyncMock(return_value=mock_me)
+    mock_client.session.save = MagicMock(return_value="sess_str")
+
+    result = await service.sign_in_with_code(
+        client=mock_client,
+        phone="+7 700 123 45 67",
+        code=" 1 2 - 3 4 5 ",
+        phone_code_hash="hash_clean",
+        session_id="sess-clean",
+    )
+
+    assert result.state == AuthState.AUTHENTICATED
+    mock_client.sign_in.assert_awaited_once_with(
+        phone="+77001234567",
+        code="12345",
+        phone_code_hash="hash_clean",
+    )
+
+

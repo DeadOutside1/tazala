@@ -1,12 +1,13 @@
 """
-QR Authentication Service for Telegram MTProto.
-Zero-Knowledge: generates QR, awaits scan, handles 2FA,
-and stores ephemeral session string in Redis.
-Protocol agnostic (uses async callbacks).
+Authentication Services for Telegram MTProto.
+QR Login: generates QR, awaits scan, handles 2FA, stores ephemeral session.
+Phone Login: sends code via Telegram 777000, handles SMS code + 2FA.
+Zero-Knowledge: sessions stored ONLY in Redis RAM with 5-minute TTL.
 """
 import asyncio
 import io
 import logging
+import re
 import uuid
 from collections.abc import Awaitable, Callable
 
@@ -146,6 +147,117 @@ class QRAuthService:
             )
         except Exception as e:
             logger.warning("2FA sign-in failed for session %s: %s", session_id[:8], e)
+            return AuthResult(
+                session_id=session_id,
+                state=AuthState.FAILED,
+                error=str(e),
+            )
+
+
+class PhoneAuthService:
+    """Handles MTProto phone number authentication lifecycle.
+
+    Flow:
+    1. send_code() → user receives 5-digit code from Telegram (account 777000)
+    2. sign_in_with_code() → complete login with code
+    3. If 2FA enabled → complete_2fa() with cloud password
+    """
+
+    def __init__(self, session_store: SessionStore | None = None) -> None:
+        self.session_store = session_store
+
+    async def send_code(
+        self,
+        client: TelegramClient,
+        phone: str,
+    ) -> str:
+        """
+        Send verification code to user's Telegram account (from 777000).
+
+        Returns:
+            phone_code_hash needed for sign_in step.
+        """
+        sanitized_phone = re.sub(r"[^\d+]", "", phone.strip())
+        result = await client.send_code_request(sanitized_phone)
+        phone_code_hash = result.phone_code_hash
+        logger.info(
+            "Verification code sent to phone %s...%s",
+            sanitized_phone[:4],
+            sanitized_phone[-2:],
+        )
+        return phone_code_hash
+
+    async def sign_in_with_code(
+        self,
+        client: TelegramClient,
+        phone: str,
+        code: str,
+        phone_code_hash: str,
+        session_id: str,
+    ) -> AuthResult:
+        """
+        Complete sign-in with SMS/Telegram code.
+        If 2FA is enabled, returns TWO_FA_REQUIRED state.
+        """
+        sanitized_phone = re.sub(r"[^\d+]", "", phone.strip())
+        sanitized_code = code.strip().replace(" ", "").replace("-", "")
+        try:
+            await client.sign_in(
+                phone=sanitized_phone,
+                code=sanitized_code,
+                phone_code_hash=phone_code_hash,
+            )
+
+            me = await client.get_me()
+            session_string = client.session.save()
+
+            if self.session_store:
+                await self.session_store.save(session_id, session_string, ttl=300)
+
+            logger.info("Phone sign-in succeeded for session %s", session_id[:8])
+            return AuthResult(
+                session_id=session_id,
+                state=AuthState.AUTHENTICATED,
+                user_id=getattr(me, "id", None),
+                username=getattr(me, "username", None),
+            )
+
+        except SessionPasswordNeededError:
+            logger.info("2FA password required after phone auth for session %s", session_id[:8])
+            return AuthResult(session_id=session_id, state=AuthState.TWO_FA_REQUIRED)
+
+        except Exception as e:
+            logger.warning("Phone sign-in failed for session %s: %s", session_id[:8], e)
+            return AuthResult(
+                session_id=session_id,
+                state=AuthState.FAILED,
+                error=str(e),
+            )
+
+    async def complete_2fa(
+        self,
+        client: TelegramClient,
+        password: str,
+        session_id: str,
+    ) -> AuthResult:
+        """Complete sign-in using 2FA password (reuses QRAuthService logic)."""
+        try:
+            await client.sign_in(password=password)
+            me = await client.get_me()
+            session_string = client.session.save()
+
+            if self.session_store:
+                await self.session_store.save(session_id, session_string, ttl=300)
+
+            logger.info("2FA sign-in (phone flow) succeeded for session %s", session_id[:8])
+            return AuthResult(
+                session_id=session_id,
+                state=AuthState.AUTHENTICATED,
+                user_id=getattr(me, "id", None),
+                username=getattr(me, "username", None),
+            )
+        except Exception as e:
+            logger.warning("2FA sign-in (phone flow) failed for session %s: %s", session_id[:8], e)
             return AuthResult(
                 session_id=session_id,
                 state=AuthState.FAILED,

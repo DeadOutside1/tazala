@@ -135,7 +135,10 @@ async def test_handler_run_clean_lock_contention():
     mock_cb = AsyncMock(spec=CallbackQuery)
     mock_cb.from_user = MagicMock(id=98765)
     mock_cb.answer = AsyncMock()
+    mock_cb.data = "run_clean:read_only"
+    mock_cb.message = None
     mock_state = AsyncMock()
+    mock_state.get_data = AsyncMock(return_value={"session_id": "test-sess"})
 
     mock_redis = AsyncMock()
     mock_redis.set = AsyncMock(return_value=None)
