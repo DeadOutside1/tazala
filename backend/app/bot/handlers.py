@@ -96,6 +96,7 @@ async def _get_active_session_id(state: FSMContext, redis: Redis, user_id: int) 
     F.text.casefold().in_({
         "menu", "меню", "мәзір", "главное меню",
         "басты мәзір", "main menu", "старт", "start",
+        "🏠 главное меню", "🏠 басты мәзір", "🏠 main menu",
     })
 )
 async def cmd_start(
@@ -130,8 +131,14 @@ async def cmd_start(
     )
 
 
-
 @router.message(Command("lang"))
+@router.message(
+    F.text.casefold().in_({
+        "🌐 сменить язык", "🌐 тілді ауыстыру", "🌐 change language",
+        "сменить язык", "тілді ауыстыру", "change language",
+        "язык", "тіл", "language",
+    })
+)
 @router.callback_query(F.data == "choose_lang")
 async def cmd_choose_lang(
     event: Message | CallbackQuery,
@@ -142,7 +149,10 @@ async def cmd_choose_lang(
     kb = get_language_kb()
     if isinstance(event, CallbackQuery):
         if event.message:
-            await event.message.edit_text(text, reply_markup=kb)
+            try:
+                await event.message.edit_text(text, reply_markup=kb)
+            except Exception:
+                await event.message.answer(text, reply_markup=kb)
         await event.answer()
     else:
         await event.answer(text, reply_markup=kb)
@@ -170,18 +180,35 @@ async def cb_set_lang(
     welcome_text = i18n.get_text("start_welcome", lang=new_lang)
     is_admin = user_id in settings.admin_ids
     if callback.message:
-        await callback.message.edit_text(
-            f"{confirm_text}\n\n{welcome_text}",
-            reply_markup=get_start_kb(lang=new_lang, is_admin=is_admin),
-            parse_mode="Markdown",
-        )
+        try:
+            await callback.message.edit_text(
+                f"{confirm_text}\n\n{welcome_text}",
+                reply_markup=get_start_kb(lang=new_lang, is_admin=is_admin),
+                parse_mode="Markdown",
+            )
+        except Exception:
+            await callback.message.answer(
+                f"{confirm_text}\n\n{welcome_text}",
+                reply_markup=get_start_kb(lang=new_lang, is_admin=is_admin),
+                parse_mode="Markdown",
+            )
 
 
 # --- B. About Security ---
 
 
+@router.message(
+    F.text.casefold().in_({
+        "🔒 безопасность", "🔒 қауіпсіздік", "🔒 security",
+        "безопасность", "қауіпсіздік", "security",
+        "помощь", "көмек", "help",
+    })
+)
 @router.callback_query(F.data == "about_security")
-async def cb_about_security(callback: CallbackQuery, lang: str = "ru") -> None:
+async def cb_about_security(
+    event: Message | CallbackQuery,
+    lang: str = "ru",
+) -> None:
     """Provide transparent details on Zero-Knowledge security."""
     text = i18n.get_text("security_info", lang=lang)
     kb = InlineKeyboardMarkup(
@@ -200,9 +227,15 @@ async def cb_about_security(callback: CallbackQuery, lang: str = "ru") -> None:
             ],
         ]
     )
-    if callback.message:
-        await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
-    await callback.answer()
+    if isinstance(event, CallbackQuery):
+        if event.message:
+            try:
+                await event.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+            except Exception:
+                await event.message.answer(text, reply_markup=kb, parse_mode="Markdown")
+        await event.answer()
+    else:
+        await event.answer(text, reply_markup=kb, parse_mode="Markdown")
 
 
 @router.callback_query(F.data == "back_to_start")
@@ -1444,7 +1477,10 @@ async def cmd_admin_stats(
     summary = await AnalyticsService.get_summary(r)
     dashboard_text = AnalyticsService.format_dashboard(summary)
     kb = get_admin_kb(lang=lang)
-    await message.answer(dashboard_text, reply_markup=kb, parse_mode="Markdown")
+    try:
+        await message.answer(dashboard_text, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        await message.answer(dashboard_text, reply_markup=kb, parse_mode=None)
 
 
 @router.callback_query(F.data == "admin_panel")
@@ -1468,9 +1504,12 @@ async def cb_admin_dashboard(
 
     if callback.message:
         try:
-            await callback.message.edit_text(dashboard_text, reply_markup=kb, parse_mode="Markdown")
+            await callback.message.edit_text(dashboard_text, reply_markup=kb, parse_mode="HTML")
         except Exception:
-            await callback.message.answer(dashboard_text, reply_markup=kb, parse_mode="Markdown")
+            try:
+                await callback.message.edit_text(dashboard_text, reply_markup=kb, parse_mode=None)
+            except Exception:
+                await callback.message.answer(dashboard_text, reply_markup=kb, parse_mode=None)
     await callback.answer("✅ Данные обновлены!" if callback.data == "admin_refresh" else "")
 
 
@@ -1515,9 +1554,12 @@ async def cb_admin_reviews(
 
     if callback.message:
         try:
-            await callback.message.edit_text(reviews_text, reply_markup=kb, parse_mode="Markdown")
+            await callback.message.edit_text(reviews_text, reply_markup=kb, parse_mode="HTML")
         except Exception:
-            await callback.message.answer(reviews_text, reply_markup=kb, parse_mode="Markdown")
+            try:
+                await callback.message.edit_text(reviews_text, reply_markup=kb, parse_mode=None)
+            except Exception:
+                await callback.message.answer(reviews_text, reply_markup=kb, parse_mode=None)
     await callback.answer()
 
 
@@ -1593,21 +1635,77 @@ async def msg_feedback_comment(
     lang: str = "ru",
 ) -> None:
     """Save user text review comment and return user to main menu."""
-    comment = (message.text or "").strip()
-    data = await state.get_data()
-    rating = data.get("feedback_rating", 5)
+    raw_text = (message.text or "").strip()
+    if not raw_text:
+        await message.answer(
+            i18n.get_text("feedback_stars_saved", lang=lang, rating=5),
+            reply_markup=get_skip_comment_kb(lang=lang),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Check if user sent a menu navigation command/button instead of a review
+    casefold_text = raw_text.casefold()
+    nav_buttons = {
+        "menu", "меню", "мәзір", "главное меню", "басты мәзір", "main menu", "старт", "start",
+        "🏠 главное меню", "🏠 басты мәзір", "🏠 main menu",
+        "⚡ начать очистку", "⚡ тазартуды бастау", "⚡ start cleaner",
+        "начать очистку", "тазартуды бастау", "start cleaner",
+        "🌐 сменить язык", "🌐 тілді ауыстыру", "🌐 change language",
+        "сменить язык", "тілді ауыстыру", "change language",
+        "язык", "тіл", "language",
+        "🔒 безопасность", "🔒 қауіпсіздік", "🔒 security",
+        "безопасность", "қауіпсіздік", "security",
+        "помощь", "көмек", "help",
+        "/start", "/menu", "/help", "/lang", "/clean", "/scan", "/cancel",
+    }
 
     user = getattr(message, "from_user", None)
     user_id = user.id if user else 0
     username = user.username if user else None
     r = _get_redis(redis)
 
+    if raw_text.startswith("/") or casefold_text in nav_buttons:
+        active_sid = await _get_active_session_id(state, r, user_id)
+        if active_sid:
+            await state.set_state(AppSG.ready_to_clean)
+        else:
+            await state.clear()
+
+        if casefold_text in {
+            "🌐 сменить язык", "🌐 тілді ауыстыру", "🌐 change language",
+            "сменить язык", "тілді ауыстыру", "change language",
+            "язык", "тіл", "language", "/lang",
+        }:
+            await cmd_choose_lang(message, lang=lang)
+            return
+        if casefold_text in {
+            "🔒 безопасность", "🔒 қауіпсіздік", "🔒 security",
+            "безопасность", "қауіпсіздік", "security",
+            "помощь", "көмек", "help", "/help",
+        }:
+            await cb_about_security(message, lang=lang)
+            return
+        if casefold_text in {
+            "⚡ начать очистку", "⚡ тазартуды бастау", "⚡ start cleaner",
+            "начать очистку", "тазартуды бастау", "start cleaner",
+            "/clean", "/scan",
+        }:
+            await msg_start_cleaner_reply_btn(message, state, redis=redis, lang=lang)
+            return
+
+        await cmd_start(message, state, redis=redis, lang=lang)
+        return
+
+    data = await state.get_data()
+    rating = data.get("feedback_rating", 5)
+
     await AnalyticsService.save_review(
         redis=r,
         user_id=user_id,
         username=username,
         rating=rating,
-        comment=comment,
+        comment=raw_text,
     )
 
     active_sid = await _get_active_session_id(state, r, user_id)

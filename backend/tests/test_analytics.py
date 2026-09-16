@@ -15,6 +15,14 @@ from app.analytics.schemas import AnalyticsSummary, ReviewItem
 from app.analytics.service import AnalyticsService
 
 
+@pytest.fixture(autouse=True)
+def isolate_reviews_file(tmp_path, monkeypatch):
+    """Ensure all analytics tests write reviews to an isolated temporary file."""
+    fake_reviews = tmp_path / "reviews.jsonl"
+    monkeypatch.setattr("app.analytics.service._get_reviews_file", lambda: fake_reviews)
+    return fake_reviews
+
+
 @pytest.mark.asyncio
 async def test_record_user():
     """Test user ID is recorded into Redis set."""
@@ -175,18 +183,40 @@ def test_format_reviews_list_truncation():
     assert "A" * 151 not in formatted
 
 
-def test_format_reviews_list_markdown_escaping():
-    """Test usernames and comments with markdown characters are safely escaped."""
+def test_format_reviews_list_html_escaping():
+    """Test usernames and comments with HTML/special characters are safely escaped."""
     reviews = [
         ReviewItem(
             user_id=2,
             username="john_doe_99",
             rating=5,
-            comment="Awesome *bold* & _italic_ bot!",
+            comment="Awesome <cool> & 'great' bot!",
             created_at="2026-09-16 00:00:00 UTC",
         )
     ]
     formatted = AnalyticsService.format_reviews_list(reviews)
-    assert r"@john\_doe\_99" in formatted
-    assert r"Awesome \*bold\* & \_italic\_ bot!" in formatted
+    assert "@john_doe_99" in formatted
+    assert "&lt;cool&gt;" in formatted
+    assert "&amp;" in formatted
+
+
+@pytest.mark.asyncio
+async def test_get_summary_disk_fallback_deduplication(tmp_path, monkeypatch):
+    """Test that disk fallback deduplicates reviews by user_id so ratings_count is accurate."""
+    fake_file = tmp_path / "reviews.jsonl"
+    monkeypatch.setattr("app.analytics.service._get_reviews_file", lambda: fake_file)
+
+    line1 = '{"user_id": 999, "username": "u1", "rating": 3, "created_at": "2026-09-16"}\n'
+    line2 = '{"user_id": 999, "username": "u1", "rating": 5, "created_at": "2026-09-16"}\n'
+    fake_file.write_text(line1 + line2, encoding="utf-8")
+
+    mock_redis = AsyncMock()
+    mock_redis.scard.return_value = 1
+    mock_redis.hgetall.return_value = {}  # Empty redis metrics
+
+    summary = await AnalyticsService.get_summary(mock_redis)
+    # Deduplication ensures count is 1 and rating is 5.0 (not count 2 and rating 4.0)
+    assert summary.ratings_count == 1
+    assert summary.avg_rating == 5.0
+
 
