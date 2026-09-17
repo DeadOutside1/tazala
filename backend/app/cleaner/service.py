@@ -9,6 +9,7 @@ from telethon import TelegramClient
 from telethon.tl import types
 from telethon.tl.functions.messages import GetDialogFiltersRequest, UpdateDialogFilterRequest
 
+from app.cleaner.classifier import SmartClassifier
 from app.cleaner.schemas import (
     CleanConfig,
     CleanProgress,
@@ -17,7 +18,7 @@ from app.cleaner.schemas import (
     FolderRule,
     UserFolderInfo,
 )
-from app.scanner.schemas import ChatStatus, ChatType, DialogInfo, ScanResult
+from app.scanner.schemas import ChatType, DialogInfo, ScanResult
 from app.telegram.session_store import SessionStore
 from app.telegram.throttle import FloodSafeExecutor
 
@@ -98,7 +99,7 @@ def get_smart_folder_presets(lang: str = "ru") -> list[FolderRule]:
                 emoji="💰",
                 categories=[ChatType.CHANNEL, ChatType.GROUP],
                 keywords=[
-                    "crypto", "btc", "eth", "trading", "invest",
+                    "crypto", "btc", "eth", "trading", "cryptotrading", "invest",
                     "money", "bank", "stocks", "finance",
                 ],
             ),
@@ -152,7 +153,7 @@ def get_smart_folder_presets(lang: str = "ru") -> list[FolderRule]:
             emoji="💰",
             categories=[ChatType.CHANNEL, ChatType.GROUP],
             keywords=[
-                "крипта", "crypto", "btc", "eth", "трейдинг",
+                "крипта", "crypto", "btc", "eth", "трейдинг", "крипто", "криптотрейдинг",
                 "инвестиции", "money", "bank", "акции", "finance",
             ],
         ),
@@ -323,30 +324,32 @@ class CleanerService:
 
         total_presets = len(presets)
 
+        # Intelligently classify dialogs across active preset rules without duplicates
+        classified = SmartClassifier.classify_dialogs(dialogs, presets)
+        total_assigned = sum(len(chats) for chats in classified.values())
+        logger.info(
+            "Classified %d chats across %d folders without duplicates",
+            total_assigned,
+            len(classified),
+        )
+
         for rule in presets:
             if not available_ids and rule.title not in used_titles:
                 logger.info("No free folder slots remaining (max 10).")
                 break
 
-            # Identify matching dialogs
-            matching: list[DialogInfo] = []
-            for d in dialogs:
-                if rule.emoji == "🗑":
-                    if d.status in (ChatStatus.DEAD, ChatStatus.ZOMBIE):
-                        matching.append(d)
-                elif rule.emoji == "💬":
-                    if d.type == ChatType.USER:
-                        matching.append(d)
-                elif rule.emoji in ("💼", "📰", "💰", "📚", "🎮"):
-                    if d.type in rule.categories:
-                        title_lower = d.title.lower()
-                        if any(kw in title_lower for kw in rule.keywords):
-                            matching.append(d)
+            matching = classified.get(rule.title, [])
 
             # Telegram allows maximum 100 peers per folder for non-premium
             candidates = matching[:100]
             include_peers = []
+            seen_peer_ids: set[int] = set()
+
             for d in candidates:
+                if d.id in seen_peer_ids:
+                    continue
+                seen_peer_ids.add(d.id)
+
                 try:
                     # Use peer_map for pre-resolved InputPeer (avoids ValueError)
                     peer = peer_map.get(d.id) if peer_map else None
