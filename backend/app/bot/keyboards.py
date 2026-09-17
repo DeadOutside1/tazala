@@ -265,6 +265,12 @@ def get_diagnostic_kb(unread_count: int, lang: str = "ru") -> InlineKeyboardMark
             ],
             [
                 InlineKeyboardButton(
+                    text=i18n.get_text("btn_folder_manager", lang=lang),
+                    callback_data="folder_mgr:list",
+                )
+            ],
+            [
+                InlineKeyboardButton(
                     text=i18n.get_text("btn_logout", lang=lang),
                     callback_data="session_logout",
                 )
@@ -335,6 +341,12 @@ def get_clean_completed_kb(lang: str = "ru") -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text=i18n.get_text("btn_clean_folders_only", lang=lang),
                     callback_data="run_clean:folders_only",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_folder_manager", lang=lang),
+                    callback_data="folder_mgr:list",
                 ),
             ],
             [

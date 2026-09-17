@@ -94,13 +94,14 @@ def test_scan_keyboard_structure():
 def test_diagnostic_keyboard_structure():
     """Test get_diagnostic_kb renders options with unread count and back_to_start."""
     kb = get_diagnostic_kb(unread_count=350)
-    assert len(kb.inline_keyboard) == 5
+    assert len(kb.inline_keyboard) == 6
     assert kb.inline_keyboard[0][0].callback_data == "run_clean:all"
     assert "350" in kb.inline_keyboard[0][0].text
     assert kb.inline_keyboard[1][0].callback_data == "run_clean:read_only"
     assert kb.inline_keyboard[2][0].callback_data == "run_clean:folders_only"
-    assert kb.inline_keyboard[3][0].callback_data == "session_logout"
-    assert kb.inline_keyboard[4][0].callback_data == "back_to_start"
+    assert kb.inline_keyboard[3][0].callback_data == "folder_mgr:list"
+    assert kb.inline_keyboard[4][0].callback_data == "session_logout"
+    assert kb.inline_keyboard[5][0].callback_data == "back_to_start"
 
 
 def test_wrapped_keyboard_structure():
@@ -115,12 +116,13 @@ def test_wrapped_keyboard_structure():
 def test_clean_completed_keyboard_structure():
     """Test get_clean_completed_kb contains all required action buttons."""
     kb = get_clean_completed_kb()
-    assert len(kb.inline_keyboard) == 5
+    assert len(kb.inline_keyboard) == 6
     assert kb.inline_keyboard[0][0].callback_data == "run_clean:folders_only"
-    assert kb.inline_keyboard[1][0].callback_data == "run_scan"
-    assert kb.inline_keyboard[2][0].callback_data == "leave_feedback"
-    assert kb.inline_keyboard[3][0].callback_data == "session_logout"
-    assert kb.inline_keyboard[4][0].callback_data == "back_to_start"
+    assert kb.inline_keyboard[1][0].callback_data == "folder_mgr:list"
+    assert kb.inline_keyboard[2][0].callback_data == "run_scan"
+    assert kb.inline_keyboard[3][0].callback_data == "leave_feedback"
+    assert kb.inline_keyboard[4][0].callback_data == "session_logout"
+    assert kb.inline_keyboard[5][0].callback_data == "back_to_start"
 
 
 def test_start_keyboard_active_session():
