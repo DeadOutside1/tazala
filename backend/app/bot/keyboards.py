@@ -241,29 +241,42 @@ def get_scan_kb(lang: str = "ru") -> InlineKeyboardMarkup:
     )
 
 
-def get_diagnostic_kb(unread_count: int, lang: str = "ru") -> InlineKeyboardMarkup:
+def get_diagnostic_kb(
+    unread_count: int, dead_count: int = 0, lang: str = "ru"
+) -> InlineKeyboardMarkup:
     """Action buttons for cleaning choices localized."""
     clean_all_text = i18n.get_text("btn_clean_all", lang=lang, unread=unread_count)
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text=clean_all_text,
+                callback_data="run_clean:all",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=i18n.get_text("btn_clean_read_only", lang=lang),
+                callback_data="run_clean:read_only",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=i18n.get_text("btn_clean_folders_only", lang=lang),
+                callback_data="run_clean:folders_only",
+            )
+        ],
+    ]
+    if dead_count > 0:
+        buttons.append(
             [
                 InlineKeyboardButton(
-                    text=clean_all_text,
-                    callback_data="run_clean:all",
+                    text=i18n.get_text("btn_leave_dead_channels", lang=lang, count=dead_count),
+                    callback_data="dead:leave_prompt",
                 )
-            ],
-            [
-                InlineKeyboardButton(
-                    text=i18n.get_text("btn_clean_read_only", lang=lang),
-                    callback_data="run_clean:read_only",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text=i18n.get_text("btn_clean_folders_only", lang=lang),
-                    callback_data="run_clean:folders_only",
-                )
-            ],
+            ]
+        )
+    buttons.extend(
+        [
             [
                 InlineKeyboardButton(
                     text=i18n.get_text("btn_folder_manager", lang=lang),
@@ -280,6 +293,27 @@ def get_diagnostic_kb(unread_count: int, lang: str = "ru") -> InlineKeyboardMark
                 InlineKeyboardButton(
                     text=i18n.get_text("btn_main_menu", lang=lang),
                     callback_data="back_to_start",
+                )
+            ],
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def get_dead_leave_confirm_kb(dead_count: int, lang: str = "ru") -> InlineKeyboardMarkup:
+    """Confirmation keyboard for mass unsubscribe from dead/zombie channels."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_confirm_leave_dead", lang=lang, count=dead_count),
+                    callback_data="dead:confirm_leave",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_cancel", lang=lang),
+                    callback_data="dead:cancel",
                 )
             ],
         ]

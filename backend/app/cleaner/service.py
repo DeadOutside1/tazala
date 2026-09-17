@@ -4,9 +4,11 @@ Cleaner service: batch mark read with throttling and smart folders creation.
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 from telethon import TelegramClient
 from telethon.tl import types
+from telethon.tl.functions.channels import LeaveChannelRequest
 from telethon.tl.functions.messages import GetDialogFiltersRequest, UpdateDialogFilterRequest
 
 from app.cleaner.classifier import SmartClassifier
@@ -18,7 +20,7 @@ from app.cleaner.schemas import (
     FolderRule,
     UserFolderInfo,
 )
-from app.scanner.schemas import ChatType, DialogInfo, ScanResult
+from app.scanner.schemas import ChatStatus, ChatType, DialogInfo, ScanResult
 from app.telegram.session_store import SessionStore
 from app.telegram.throttle import FloodSafeExecutor
 
@@ -623,3 +625,75 @@ class CleanerService:
         )
         logger.info("Successfully deleted folder %d", folder_id)
         return True
+
+    async def mass_leave_dead_channels(
+        self,
+        client: TelegramClient,
+        dialogs: list[DialogInfo],
+        peer_map: dict[int, Any] | None = None,
+        progress_callback: Callable[[CleanProgress], Awaitable[None]] | None = None,
+        delay: float = 0.8,
+        session_id: str = "",
+    ) -> int:
+        """
+        Mass unsubscribe from dead and zombie channels and groups.
+        Excludes personal user chats (ChatType.USER).
+        """
+        target_dialogs = [
+            d
+            for d in dialogs
+            if d.status in (ChatStatus.DEAD, ChatStatus.ZOMBIE)
+            and d.type in (ChatType.CHANNEL, ChatType.GROUP)
+        ]
+        total = len(target_dialogs)
+        left_count = 0
+
+        logger.info(
+            "Starting mass leave for %d dead/zombie channels in session %s",
+            total,
+            session_id[:8],
+        )
+
+        for i, dialog in enumerate(target_dialogs, 1):
+            try:
+                input_peer = peer_map.get(dialog.id, dialog.id) if peer_map else dialog.id
+
+                async def _leave_action(p=input_peer):
+                    try:
+                        await client.delete_dialog(p)
+                    except Exception:
+                        await client(LeaveChannelRequest(p))
+
+                await FloodSafeExecutor.execute(
+                    _leave_action,
+                    default_delay=delay,
+                )
+                left_count += 1
+            except Exception as e:
+                logger.warning(
+                    "Failed to leave dead channel %s (%d): %s",
+                    dialog.title,
+                    dialog.id,
+                    e,
+                )
+
+            if progress_callback:
+                try:
+                    await progress_callback(
+                        CleanProgress(
+                            session_id=session_id,
+                            step=CleanStep.LEAVE_CHANNELS,
+                            current=i,
+                            total=total,
+                            message=dialog.title[:15],
+                        )
+                    )
+                except Exception as e:
+                    logger.debug("Failed notifying progress in mass_leave: %s", e)
+
+        logger.info(
+            "Successfully left %d dead channels for session %s",
+            left_count,
+            session_id[:8],
+        )
+        return left_count

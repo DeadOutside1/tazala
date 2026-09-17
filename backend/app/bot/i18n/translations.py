@@ -984,6 +984,60 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "✨ *Inspire your friends to achieve digital Zen too!* 🧘"
         ),
     },
+    "btn_leave_dead_channels": {
+        "ru": "💣 Отписаться от {count} мёртвых каналов",
+        "kk": "💣 Барлық {count} өлі каналдан шығу",
+        "en": "💣 Leave all {count} dead channels",
+    },
+    "btn_confirm_leave_dead": {
+        "ru": "💣 Да, отписаться от всех {count}",
+        "kk": "💣 Иә, барлық {count}-ден шығу",
+        "en": "💣 Yes, leave all {count}",
+    },
+    "dead_leave_prompt_warn": {
+        "ru": (
+            "⚠️ **Внимание: Необратимое действие!**\n\n"
+            "Найдено **{count}** каналов и групп, заброшенных более 6–12 месяцев.\n"
+            "Вы действительно хотите отписаться от них одним кликом?\n"
+            "(Вам не придётся делать это вручную)"
+        ),
+        "kk": (
+            "⚠️ **Назар аударыңыз: Қайтарылмайтын әрекет!**\n\n"
+            "6–12 айдан астам уақыт бойы белсенді емес **{count}** канал мен топ табылды.\n"
+            "Олардың барлығынан бір басумен шыққыңыз келе ме?\n"
+            "(Қолмен шығудың қажеті болмайды)"
+        ),
+        "en": (
+            "⚠️ **Warning: Irreversible Action!**\n\n"
+            "Found **{count}** channels and groups inactive for over 6–12 months.\n"
+            "Are you sure you want to leave all of them in one click?\n"
+            "(You won't have to do it manually)"
+        ),
+    },
+    "dead_leave_starting": {
+        "ru": "💣 Начинаю массовую отписку от мёртвых каналов...",
+        "kk": "💣 Өлі каналдардан жаппай шығу басталуда...",
+        "en": "💣 Starting mass unsubscribe from dead channels...",
+    },
+    "dead_leave_progress": {
+        "ru": "💣 Отписка: покинуто {current} из {total} ({title})...",
+        "kk": "💣 Шығу барысы: {total}-ден {current} өшірілді ({title})...",
+        "en": "💣 Leaving: {current} of {total} left ({title})...",
+    },
+    "dead_leave_completed": {
+        "ru": (
+            "🎉 **Готово!** Вы успешно отписались от **{count}** мёртвых каналов.\n"
+            "Ваш Telegram стал намного легче! 🧘"
+        ),
+        "kk": (
+            "🎉 **Дайын!** Сіз **{count}** өлі каналдан сәтті шықтыңыз.\n"
+            "Telegram тізіміңіз біршама тазарды! 🧘"
+        ),
+        "en": (
+            "🎉 **Done!** You have successfully left **{count}** dead channels.\n"
+            "Your Telegram is much cleaner now! 🧘"
+        ),
+    },
 }
 
 

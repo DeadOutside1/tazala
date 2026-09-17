@@ -11,6 +11,7 @@ class CleanStep(StrEnum):
 
     MARK_READ = "mark_read"
     CREATE_FOLDERS = "create_folders"
+    LEAVE_CHANNELS = "leave_channels"
     LOGOUT = "logout"
     COMPLETED = "completed"
 

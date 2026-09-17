@@ -26,6 +26,7 @@ from app.bot.i18n.manager import i18n
 from app.bot.keyboards import (
     get_admin_kb,
     get_clean_completed_kb,
+    get_dead_leave_confirm_kb,
     get_diagnostic_kb,
     get_feedback_rating_kb,
     get_folder_actions_kb,
@@ -46,6 +47,7 @@ from app.bot.utils import ThrottledMessageEditor
 from app.cleaner.schemas import CleanConfig
 from app.cleaner.service import CleanerService, get_smart_folder_presets
 from app.config import settings
+from app.scanner.schemas import ChatStatus, ChatType
 from app.scanner.service import ScannerService
 from app.telegram.client_manager import ClientManager
 from app.telegram.lock import RedisLock
@@ -310,7 +312,11 @@ async def msg_start_cleaner_reply_btn(
                     archived_count=scan_result.archived_count,
                     top_list="...",
                 ),
-                reply_markup=get_diagnostic_kb(scan_result.total_unread, lang=lang),
+                reply_markup=get_diagnostic_kb(
+                    scan_result.total_unread,
+                    dead_count=scan_result.dead_count + scan_result.zombie_count,
+                    lang=lang,
+                ),
                 parse_mode="Markdown",
             )
             return
@@ -968,7 +974,9 @@ async def cb_run_scan(
             if status_msg:
                 await status_msg.edit_text(
                     report_text,
-                    reply_markup=get_diagnostic_kb(scan_result.total_unread, lang=lang),
+                    reply_markup=get_diagnostic_kb(
+                        scan_result.total_unread, dead_count=dead_total, lang=lang
+                    ),
                     parse_mode="Markdown",
                 )
         except Exception as e:
@@ -1132,7 +1140,11 @@ async def cb_back_to_diagnostic(
                                   dead_percentage=scan_result.dead_percentage,
                                   archived_count=scan_result.archived_count,
                                   top_list="..."),
-                    reply_markup=get_diagnostic_kb(scan_result.total_unread, lang=lang),
+                    reply_markup=get_diagnostic_kb(
+                        scan_result.total_unread,
+                        dead_count=scan_result.dead_count + scan_result.zombie_count,
+                        lang=lang,
+                    ),
                     parse_mode="Markdown",
                 )
     await callback.answer()
@@ -1402,7 +1414,236 @@ async def _execute_cleanup(
                 pass
 
 
-# --- G. Logout Handler ---
+# --- G. Mass Leave Dead Channels ("Nuclear Button") Flow ---
+
+
+@router.callback_query(F.data == "dead:leave_prompt")
+async def cb_dead_leave_prompt(
+    callback: CallbackQuery,
+    state: FSMContext,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Prompt user for confirmation before mass leaving dead channels."""
+    user = getattr(callback, "from_user", None)
+    user_id = user.id if user else 0
+    r = _get_redis(redis)
+    session_id = await _get_active_session_id(state, r, user_id)
+
+    if not session_id:
+        if callback.message:
+            await callback.message.answer(i18n.get_text("session_not_found", lang=lang))
+        await callback.answer()
+        return
+
+    scan_result = await ScannerService.get_cached_scan(r, session_id)
+    if not scan_result:
+        if callback.message:
+            await callback.message.answer(i18n.get_text("session_not_found", lang=lang))
+        await callback.answer()
+        return
+
+    dead_total = scan_result.dead_count + scan_result.zombie_count
+    text = i18n.get_text("dead_leave_prompt_warn", lang=lang, count=dead_total)
+    kb = get_dead_leave_confirm_kb(dead_total, lang=lang)
+
+    if callback.message:
+        try:
+            await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            await callback.message.answer(text, reply_markup=kb, parse_mode="Markdown")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "dead:cancel")
+async def cb_dead_cancel(
+    callback: CallbackQuery,
+    state: FSMContext,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Cancel mass leave and return to diagnostic results."""
+    user = getattr(callback, "from_user", None)
+    user_id = user.id if user else 0
+    r = _get_redis(redis)
+    session_id = await _get_active_session_id(state, r, user_id)
+
+    if session_id:
+        scan_result = await ScannerService.get_cached_scan(r, session_id)
+        if scan_result:
+            await state.set_state(AppSG.ready_to_clean)
+            dead_total = scan_result.dead_count + scan_result.zombie_count
+            unreads_label = (
+                "непрочит." if lang == "ru" else "оқылмаған" if lang == "kk" else "unread"
+            )
+            top_list = "\n".join(
+                f"• {chat.title[:20]}: **{chat.unread_count}** {unreads_label}"
+                for chat in scan_result.top_unread_chats[:3]
+            ) or i18n.get_text("no_unread_chats", lang=lang)
+
+            report_text = i18n.get_text(
+                "scan_report",
+                lang=lang,
+                total_dialogs=scan_result.total_dialogs,
+                total_unread=f"{scan_result.total_unread:,}",
+                dead_total=dead_total,
+                dead_percentage=scan_result.dead_percentage,
+                archived_count=scan_result.archived_count,
+                top_list=top_list,
+            )
+            kb = get_diagnostic_kb(scan_result.total_unread, dead_count=dead_total, lang=lang)
+            if callback.message:
+                try:
+                    await callback.message.edit_text(
+                        report_text, reply_markup=kb, parse_mode="Markdown"
+                    )
+                except Exception:
+                    await callback.message.answer(
+                        report_text, reply_markup=kb, parse_mode="Markdown"
+                    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "dead:confirm_leave")
+async def cb_dead_confirm_leave(
+    callback: CallbackQuery,
+    state: FSMContext,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Execute mass unsubscribe from dead and zombie channels."""
+    user = getattr(callback, "from_user", None)
+    user_id = user.id if user else 0
+    r = _get_redis(redis)
+    session_id = await _get_active_session_id(state, r, user_id)
+
+    if not session_id:
+        if callback.message:
+            await callback.message.answer(i18n.get_text("session_not_found", lang=lang))
+        await callback.answer()
+        return
+
+    async with RedisLock(r, f"leave:{user_id}", timeout=600) as acquired:
+        if not acquired:
+            await callback.answer(
+                i18n.get_text("action_already_running", lang=lang),
+                show_alert=True,
+            )
+            return
+
+        scan_result = await ScannerService.get_cached_scan(r, session_id)
+        if not scan_result:
+            if callback.message:
+                await callback.message.answer(i18n.get_text("session_not_found", lang=lang))
+            await callback.answer()
+            return
+
+        status_msg = (
+            await callback.message.answer(i18n.get_text("dead_leave_starting", lang=lang))
+            if callback.message
+            else None
+        )
+        await callback.answer()
+
+        session_store = SessionStore(r)
+        client = await session_store.load(session_id)
+        if not client:
+            if status_msg:
+                await status_msg.edit_text(i18n.get_text("session_not_found", lang=lang))
+            return
+
+        editor = ThrottledMessageEditor(status_msg) if status_msg else None
+
+        async def on_leave_progress(progress) -> None:
+            if editor:
+                await editor.edit_text_safe(
+                    i18n.get_text(
+                        "dead_leave_progress",
+                        lang=lang,
+                        current=progress.current,
+                        total=progress.total,
+                        title=progress.message,
+                    )
+                )
+
+        cleaner = CleanerService()
+        try:
+            peer_map = await cleaner._populate_entity_cache(client)
+            left_count = await cleaner.mass_leave_dead_channels(
+                client=client,
+                dialogs=scan_result.dialogs,
+                peer_map=peer_map,
+                progress_callback=on_leave_progress,
+                session_id=session_id,
+            )
+
+            # Update cached scan_result in Redis
+            left_dialog_ids = {
+                d.id
+                for d in scan_result.dialogs
+                if d.status in (ChatStatus.DEAD, ChatStatus.ZOMBIE)
+                and d.type in (ChatType.CHANNEL, ChatType.GROUP)
+            }
+            scan_result.dialogs = [
+                d for d in scan_result.dialogs if d.id not in left_dialog_ids
+            ]
+            scan_result.dead_count = sum(
+                1 for d in scan_result.dialogs if d.status == ChatStatus.DEAD
+            )
+            scan_result.zombie_count = sum(
+                1 for d in scan_result.dialogs if d.status == ChatStatus.ZOMBIE
+            )
+            scan_result.channels_count = sum(
+                1 for d in scan_result.dialogs if d.type == ChatType.CHANNEL
+            )
+            scan_result.groups_count = sum(
+                1 for d in scan_result.dialogs if d.type == ChatType.GROUP
+            )
+            scan_result.total_dialogs = len(scan_result.dialogs)
+            scan_result.dead_percentage = round(
+                (
+                    (scan_result.dead_count + scan_result.zombie_count)
+                    / max(scan_result.total_dialogs, 1)
+                )
+                * 100,
+                1,
+            )
+            await ScannerService.save_scan_result(r, scan_result)
+
+            report_text = i18n.get_text(
+                "dead_leave_completed", lang=lang, count=left_count
+            )
+            kb = get_clean_completed_kb(lang=lang)
+
+            if status_msg:
+                try:
+                    await status_msg.edit_text(
+                        report_text, reply_markup=kb, parse_mode="Markdown"
+                    )
+                except Exception:
+                    if callback.message:
+                        await callback.message.answer(
+                            report_text, reply_markup=kb, parse_mode="Markdown"
+                        )
+            elif callback.message:
+                await callback.message.answer(
+                    report_text, reply_markup=kb, parse_mode="Markdown"
+                )
+        except Exception as e:
+            logger.exception("Mass leave failed: %s", e)
+            if status_msg:
+                try:
+                    await status_msg.edit_text(f"❌ {e}", parse_mode=None)
+                except Exception:
+                    pass
+        finally:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+
+
+# --- H. Logout Handler ---
 
 
 @router.callback_query(F.data == "session_logout")
