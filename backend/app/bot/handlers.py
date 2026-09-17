@@ -39,6 +39,7 @@ from app.bot.keyboards import (
     get_sms_code_kb,
     get_start_kb,
     get_wrapped_kb,
+    get_wrapped_stories_guide_kb,
 )
 from app.bot.states import AppSG, AuthSG, FeedbackSG, FolderManagerSG
 from app.bot.utils import ThrottledMessageEditor
@@ -1463,6 +1464,86 @@ async def cb_session_logout(
             reply_markup=get_start_kb(lang=lang, has_active_session=False, is_admin=is_admin),
             parse_mode="Markdown",
         )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("wrapped:stories_guide"))
+async def cb_wrapped_stories_guide(
+    callback: CallbackQuery,
+    lang: str = "ru",
+) -> None:
+    """Display step-by-step visual instructions on how to post Wrapped to Stories."""
+    parts = (callback.data or "").split(":", 2)
+    session_id = parts[2] if len(parts) > 2 else ""
+
+    guide_text = i18n.get_text("wrapped_stories_guide", lang=lang)
+    kb = get_wrapped_stories_guide_kb(session_id=session_id, lang=lang)
+
+    if callback.message:
+        try:
+            await callback.message.edit_caption(
+                caption=guide_text,
+                reply_markup=kb,
+                parse_mode="Markdown",
+            )
+        except Exception:
+            await callback.message.answer(
+                text=guide_text,
+                reply_markup=kb,
+                parse_mode="Markdown",
+            )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("wrapped:back"))
+async def cb_wrapped_back_to_card(
+    callback: CallbackQuery,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Restore original Wrapped card caption and sharing options."""
+    parts = (callback.data or "").split(":", 2)
+    session_id = parts[2] if len(parts) > 2 else ""
+
+    r = _get_redis(redis)
+    cached_stats = (
+        await WrappedService.get_cached_wrapped(r, session_id) if session_id else None
+    )
+
+    if cached_stats:
+        caption = i18n.get_text(
+            "wrapped_logout_caption",
+            lang=lang,
+            archetype=cached_stats.archetype_title,
+            messages=f"{cached_stats.messages_cleared:,}",
+            hours=cached_stats.time_saved_hours,
+            score=cached_stats.zen_score,
+        )
+    else:
+        caption = i18n.get_text(
+            "wrapped_logout_caption",
+            lang=lang,
+            archetype="—",
+            messages="—",
+            hours="—",
+            score="—",
+        )
+
+    kb = get_wrapped_kb(session_id=session_id, lang=lang)
+
+    if callback.message:
+        try:
+            await callback.message.edit_caption(
+                caption=caption,
+                reply_markup=kb,
+                parse_mode="Markdown",
+            )
+        except Exception:
+            await callback.message.answer(
+                text=caption,
+                reply_markup=kb,
+                parse_mode="Markdown",
+            )
     await callback.answer()
 
 

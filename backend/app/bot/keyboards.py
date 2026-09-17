@@ -2,6 +2,7 @@
 Multilingual inline keyboards for Tazala Bot UI.
 """
 from aiogram.types import (
+    CopyTextButton,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     KeyboardButton,
@@ -378,24 +379,41 @@ def get_clean_completed_kb(lang: str = "ru") -> InlineKeyboardMarkup:
 
 
 def get_wrapped_kb(session_id: str = "", lang: str = "ru") -> InlineKeyboardMarkup:
-    """Actions after cleanup & logout: sharing results & return to start."""
+    """
+    Actions after cleanup & logout:
+    sharing results across Telegram, WhatsApp, Stories & return to start.
+    """
+    bot_url = "https://t.me/tazala_app_bot"
     share_text = (
-        "Мен%20Tazala%20арқылы%20Telegram-ды%20тазарттым!"
+        "Мен%20Tazala%20арқылы%20Telegram-ды%20тазалап%2C%20Дзенге%20жеттім!%20Сен%20де%20көріп%20көр%3A"
         if lang == "kk"
         else (
-            "I%20achieved%20Zen%20in%20Telegram%20with%20Tazala!"
+            "I%20achieved%20Zen%20in%20Telegram%20with%20Tazala!%20Try%20it%20too%3A"
             if lang == "en"
-            else "Я%20навел%20Дзен%20в%20Telegram%20с%20Tazala!"
+            else "Я%20навел%20Дзен%20в%20Telegram%20с%20Tazala!%20Попробуй%20и%20ты%3A"
         )
     )
-    share_url = f"https://t.me/share/url?url={share_text}"
+    tg_share_url = f"https://t.me/share/url?url={bot_url}&text={share_text}"
+    wa_share_url = f"https://api.whatsapp.com/send?text={share_text}%20{bot_url}"
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=i18n.get_text("btn_share", lang=lang),
-                    url=share_url,
+                    text=i18n.get_text("btn_share_tg", lang=lang),
+                    url=tg_share_url,
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_share_whatsapp", lang=lang),
+                    url=wa_share_url,
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_share_stories", lang=lang),
+                    callback_data=f"wrapped:stories_guide:{session_id}",
                 )
             ],
             [
@@ -408,6 +426,35 @@ def get_wrapped_kb(session_id: str = "", lang: str = "ru") -> InlineKeyboardMark
                 InlineKeyboardButton(
                     text=i18n.get_text("btn_main_menu", lang=lang),
                     callback_data="back_to_start",
+                )
+            ],
+        ]
+    )
+
+
+def get_wrapped_stories_guide_kb(
+    session_id: str = "",
+    lang: str = "ru",
+) -> InlineKeyboardMarkup:
+    """Action buttons for posting Wrapped card to Instagram and Telegram Stories."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_copy_bot_link", lang=lang),
+                    copy_text=CopyTextButton(text="https://t.me/tazala_app_bot"),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_open_instagram", lang=lang),
+                    url="https://instagram.com",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_back_to_card", lang=lang),
+                    callback_data=f"wrapped:back:{session_id}",
                 )
             ],
         ]

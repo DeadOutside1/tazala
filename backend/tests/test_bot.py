@@ -105,12 +105,26 @@ def test_diagnostic_keyboard_structure():
 
 
 def test_wrapped_keyboard_structure():
-    """Test get_wrapped_kb contains share URL, leave_feedback, and back_to_start."""
+    """Test get_wrapped_kb contains Telegram, WhatsApp, Stories, feedback, and back buttons."""
     kb = get_wrapped_kb(session_id="dummy-sess")
-    assert len(kb.inline_keyboard) == 3
+    assert len(kb.inline_keyboard) == 5
     assert "https://t.me/share/url" in (kb.inline_keyboard[0][0].url or "")
-    assert kb.inline_keyboard[1][0].callback_data == "leave_feedback"
-    assert kb.inline_keyboard[2][0].callback_data == "back_to_start"
+    assert "api.whatsapp.com/send" in (kb.inline_keyboard[1][0].url or "")
+    assert kb.inline_keyboard[2][0].callback_data == "wrapped:stories_guide:dummy-sess"
+    assert kb.inline_keyboard[3][0].callback_data == "leave_feedback"
+    assert kb.inline_keyboard[4][0].callback_data == "back_to_start"
+
+
+def test_wrapped_stories_guide_keyboard_structure():
+    """Test get_wrapped_stories_guide_kb contains copy link, Instagram, and back to card buttons."""
+    from app.bot.keyboards import get_wrapped_stories_guide_kb
+
+    kb = get_wrapped_stories_guide_kb(session_id="dummy-sess")
+    assert len(kb.inline_keyboard) == 3
+    assert kb.inline_keyboard[0][0].copy_text is not None
+    assert "t.me/tazala_app_bot" in kb.inline_keyboard[0][0].copy_text.text
+    assert "instagram.com" in (kb.inline_keyboard[1][0].url or "")
+    assert kb.inline_keyboard[2][0].callback_data == "wrapped:back:dummy-sess"
 
 
 def test_clean_completed_keyboard_structure():

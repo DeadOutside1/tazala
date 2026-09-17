@@ -919,6 +919,71 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "Please log in via the menu."
         ),
     },
+    "btn_share_tg": {
+        "ru": "✈️ Отправить другу в Telegram",
+        "kk": "✈️ Telegram-да досыңа жіберу",
+        "en": "✈️ Send to Telegram friend",
+    },
+    "btn_share_whatsapp": {
+        "ru": "🟢 Поделиться в WhatsApp",
+        "kk": "🟢 WhatsApp-та бөлісу",
+        "en": "🟢 Share on WhatsApp",
+    },
+    "btn_share_stories": {
+        "ru": "📸 В Stories (Instagram / Telegram)",
+        "kk": "📸 Stories-ке салу (Instagram / TG)",
+        "en": "📸 Post to Stories (Instagram / TG)",
+    },
+    "btn_copy_bot_link": {
+        "ru": "📋 Скопировать ссылку для стикера",
+        "kk": "📋 Стикер үшін сілтемені көшіру",
+        "en": "📋 Copy link for sticker",
+    },
+    "btn_open_instagram": {
+        "ru": "📸 Открыть Instagram",
+        "kk": "📸 Instagram-ды ашу",
+        "en": "📸 Open Instagram",
+    },
+    "btn_back_to_card": {
+        "ru": "🔙 Назад к карточке",
+        "kk": "🔙 Карточкаға оралу",
+        "en": "🔙 Back to card",
+    },
+    "wrapped_stories_guide": {
+        "ru": (
+            "📸 **Как опубликовать карточку в Stories:**\n\n"
+            "1️⃣ **Сохраните карточку выше в галерею** "
+            "(нажмите на картинку ➔ три точки в углу ➔ «Сохранить в галерею» 📲).\n"
+            "2️⃣ **Откройте Stories** в Instagram или Telegram.\n"
+            "3️⃣ **Выберите сохраненную картинку Tazala** из галереи.\n"
+            "4️⃣ **Добавьте стикер-ссылку** на бота "
+            "(нажмите кнопку ниже, чтобы скопировать ссылку):\n"
+            "`https://t.me/tazala_app_bot`\n\n"
+            "✨ *Пусть друзья тоже оценят свой цифровой Дзен!* 🧘"
+        ),
+        "kk": (
+            "📸 **Карточканы Stories-ке қалай салу керек:**\n\n"
+            "1️⃣ **Жоғарыдағы карточканы галереяға сақтаңыз** "
+            "(суретті басыңыз ➔ бұрыштағы үш нүкте ➔ «Галереяға сақтау» 📲).\n"
+            "2️⃣ **Instagram немесе Telegram Stories-ті ашыңыз**.\n"
+            "3️⃣ Галереядан **сақталған Tazala суретін таңдаңыз**.\n"
+            "4️⃣ Боттың **сілтеме-стикерін қосыңыз** "
+            "(көшіру үшін төмендегі батырманы басыңыз):\n"
+            "`https://t.me/tazala_app_bot`\n\n"
+            "✨ *Достарыңыз да өздерінің цифрлық Дзенін бағаласын!* 🧘"
+        ),
+        "en": (
+            "📸 **How to post your card to Stories:**\n\n"
+            "1️⃣ **Save the card above to your gallery** "
+            "(tap the image ➔ three dots ➔ «Save to gallery» 📲).\n"
+            "2️⃣ **Open Stories** in Instagram or Telegram.\n"
+            "3️⃣ **Select the saved Tazala card** from your gallery.\n"
+            "4️⃣ **Add a link sticker** to the bot "
+            "(tap button below to copy the link):\n"
+            "`https://t.me/tazala_app_bot`\n\n"
+            "✨ *Inspire your friends to achieve digital Zen too!* 🧘"
+        ),
+    },
 }
 
 
