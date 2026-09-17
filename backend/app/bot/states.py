@@ -21,6 +21,7 @@ class AppSG(StatesGroup):
     ready_to_clean = State()
     selecting_folders = State()
     cleaning = State()
+    browsing_dead_channels = State()
 
 
 class FeedbackSG(StatesGroup):

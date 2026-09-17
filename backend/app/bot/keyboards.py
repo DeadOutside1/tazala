@@ -11,6 +11,7 @@ from aiogram.types import (
 
 from app.bot.i18n.manager import i18n
 from app.cleaner.schemas import FolderRule, UserFolderInfo
+from app.scanner.schemas import DialogInfo
 
 
 def get_main_menu_reply_kb(lang: str = "ru") -> ReplyKeyboardMarkup:
@@ -318,6 +319,103 @@ def get_dead_leave_confirm_kb(dead_count: int, lang: str = "ru") -> InlineKeyboa
             ],
         ]
     )
+
+
+def get_dead_choice_kb(dead_count: int, lang: str = "ru") -> InlineKeyboardMarkup:
+    """Choose between 1-click mass unsubscribe or selective browsing."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_dead_all_fast", lang=lang, count=dead_count),
+                    callback_data="dead:all_prompt",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_dead_browse_manual", lang=lang),
+                    callback_data="dead:browse:0",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_back", lang=lang),
+                    callback_data="dead:cancel",
+                )
+            ],
+        ]
+    )
+
+
+def get_dead_channels_browse_kb(
+    dialogs: list[DialogInfo],
+    selected_ids: set[int],
+    page: int = 0,
+    per_page: int = 8,
+    lang: str = "ru",
+) -> InlineKeyboardMarkup:
+    """Interactive paginated keyboard with checkboxes for dead channels."""
+    total_pages = max(1, (len(dialogs) + per_page - 1) // per_page)
+    page = max(0, min(page, total_pages - 1))
+    current_items = dialogs[page * per_page : (page + 1) * per_page]
+
+    rows: list[list[InlineKeyboardButton]] = []
+
+    # Channel buttons with checkboxes
+    for d in current_items:
+        check = "✅" if d.id in selected_ids else "⬜"
+        title = d.title[:24] if d.title else f"Chat {d.id}"
+        rows.append([
+            InlineKeyboardButton(
+                text=f"{check} {title}",
+                callback_data=f"dead:toggle:{d.id}:{page}",
+            )
+        ])
+
+    # Navigation row
+    nav_row: list[InlineKeyboardButton] = []
+    if page > 0:
+        nav_row.append(
+            InlineKeyboardButton(text="⬅️", callback_data=f"dead:page:{page - 1}")
+        )
+    nav_row.append(
+        InlineKeyboardButton(text=f"{page + 1} / {total_pages}", callback_data="dead:noop")
+    )
+    if page < total_pages - 1:
+        nav_row.append(
+            InlineKeyboardButton(text="➡️", callback_data=f"dead:page:{page + 1}")
+        )
+    rows.append(nav_row)
+
+    # Bulk actions for this page
+    rows.append([
+        InlineKeyboardButton(
+            text=i18n.get_text("btn_dead_select_page", lang=lang),
+            callback_data=f"dead:select_page:{page}",
+        ),
+        InlineKeyboardButton(
+            text=i18n.get_text("btn_dead_deselect_page", lang=lang),
+            callback_data=f"dead:deselect_page:{page}",
+        ),
+    ])
+
+    # Final action button: delete selected
+    rows.append([
+        InlineKeyboardButton(
+            text=i18n.get_text("btn_dead_delete_selected", lang=lang, count=len(selected_ids)),
+            callback_data="dead:confirm_selected",
+        )
+    ])
+
+    # Back button
+    rows.append([
+        InlineKeyboardButton(
+            text=i18n.get_text("btn_back", lang=lang),
+            callback_data="dead:leave_prompt",
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def get_folder_selection_kb(

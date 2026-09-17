@@ -1038,6 +1038,67 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "Your Telegram is much cleaner now! 🧘"
         ),
     },
+    "dead_choice_prompt": {
+        "ru": (
+            "💣 **Найдено {count} заброшенных каналов и групп.**\n\n"
+            "Как вы хотите поступить?"
+        ),
+        "kk": (
+            "💣 **{count} белсенді емес канал мен топ табылды.**\n\n"
+            "Қалай жалғастырғыңыз келеді?"
+        ),
+        "en": (
+            "💣 **Found {count} inactive channels and groups.**\n\n"
+            "How would you like to proceed?"
+        ),
+    },
+    "btn_dead_all_fast": {
+        "ru": "⚡ Отписаться от всех {count} разом",
+        "kk": "⚡ Барлық {count}-ден бірден шығу",
+        "en": "⚡ Leave all {count} at once",
+    },
+    "btn_dead_browse_manual": {
+        "ru": "📋 Выбрать из списка вручную",
+        "kk": "📋 Тізімнен қолмен таңдау",
+        "en": "📋 Select from list manually",
+    },
+    "dead_browse_title": {
+        "ru": (
+            "📋 **Список заброшенных каналов**\n"
+            "Стр. {page}/{total_pages} • Отмечено: **{selected} из {total}**\n\n"
+            "_Нажмите на канал, чтобы снять или поставить отметку:_"
+        ),
+        "kk": (
+            "📋 **Белсенді емес каналдар тізімі**\n"
+            "Бет {page}/{total_pages} • Таңдалғаны: **{selected} / {total}**\n\n"
+            "_Белгіні қою немесе алып тастау үшін каналды басыңыз:_"
+        ),
+        "en": (
+            "📋 **Inactive Channels List**\n"
+            "Page {page}/{total_pages} • Selected: **{selected} of {total}**\n\n"
+            "_Tap a channel to toggle selection:_"
+        ),
+    },
+    "btn_dead_select_page": {
+        "ru": "🔘 Выбрать страницу",
+        "kk": "🔘 Бетті таңдау",
+        "en": "🔘 Select page",
+    },
+    "btn_dead_deselect_page": {
+        "ru": "⚪ Снять страницу",
+        "kk": "⚪ Бетті алып тастау",
+        "en": "⚪ Deselect page",
+    },
+    "btn_dead_delete_selected": {
+        "ru": "🗑 Отписаться от выбранных ({count})",
+        "kk": "🗑 Таңдалған {count} каналдан шығу",
+        "en": "🗑 Leave selected ({count})",
+    },
+    "dead_none_selected_alert": {
+        "ru": "⚠️ Не выбрано ни одного канала для отписки!",
+        "kk": "⚠️ Шығу үшін бірде-бір канал таңдалмаған!",
+        "en": "⚠️ No channels selected to leave!",
+    },
 }
 
 

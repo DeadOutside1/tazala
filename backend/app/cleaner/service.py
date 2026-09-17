@@ -634,16 +634,20 @@ class CleanerService:
         progress_callback: Callable[[CleanProgress], Awaitable[None]] | None = None,
         delay: float = 0.8,
         session_id: str = "",
+        selected_ids: set[int] | list[int] | None = None,
     ) -> int:
         """
         Mass unsubscribe from dead and zombie channels and groups.
         Excludes personal user chats (ChatType.USER).
+        If selected_ids is provided, leaves only channels present in selected_ids.
         """
+        selected_set = set(selected_ids) if selected_ids is not None else None
         target_dialogs = [
             d
             for d in dialogs
             if d.status in (ChatStatus.DEAD, ChatStatus.ZOMBIE)
             and d.type in (ChatType.CHANNEL, ChatType.GROUP)
+            and (selected_set is None or d.id in selected_set)
         ]
         total = len(target_dialogs)
         left_count = 0

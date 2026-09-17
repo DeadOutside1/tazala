@@ -26,6 +26,8 @@ from app.bot.i18n.manager import i18n
 from app.bot.keyboards import (
     get_admin_kb,
     get_clean_completed_kb,
+    get_dead_channels_browse_kb,
+    get_dead_choice_kb,
     get_dead_leave_confirm_kb,
     get_diagnostic_kb,
     get_feedback_rating_kb,
@@ -47,7 +49,7 @@ from app.bot.utils import ThrottledMessageEditor
 from app.cleaner.schemas import CleanConfig
 from app.cleaner.service import CleanerService, get_smart_folder_presets
 from app.config import settings
-from app.scanner.schemas import ChatStatus, ChatType
+from app.scanner.schemas import ChatStatus, ChatType, DialogInfo, ScanResult
 from app.scanner.service import ScannerService
 from app.telegram.client_manager import ClientManager
 from app.telegram.lock import RedisLock
@@ -1417,6 +1419,44 @@ async def _execute_cleanup(
 # --- G. Mass Leave Dead Channels ("Nuclear Button") Flow ---
 
 
+def _get_target_dead_dialogs(scan_result: ScanResult) -> list[DialogInfo]:
+    """Extract dialogs eligible for dead channels unsubscribe."""
+    return [
+        d
+        for d in scan_result.dialogs
+        if d.status in (ChatStatus.DEAD, ChatStatus.ZOMBIE)
+        and d.type in (ChatType.CHANNEL, ChatType.GROUP)
+    ]
+
+
+def _render_dead_browse_view(
+    dead_dialogs: list[DialogInfo],
+    selected_ids: set[int],
+    page: int,
+    lang: str,
+) -> tuple[str, InlineKeyboardMarkup]:
+    """Helper to generate text and keyboard for dead channels browser."""
+    per_page = 8
+    total_pages = max(1, (len(dead_dialogs) + per_page - 1) // per_page)
+    page = max(0, min(page, total_pages - 1))
+    text = i18n.get_text(
+        "dead_browse_title",
+        lang=lang,
+        page=page + 1,
+        total_pages=total_pages,
+        selected=len(selected_ids),
+        total=len(dead_dialogs),
+    )
+    kb = get_dead_channels_browse_kb(
+        dialogs=dead_dialogs,
+        selected_ids=selected_ids,
+        page=page,
+        per_page=per_page,
+        lang=lang,
+    )
+    return text, kb
+
+
 @router.callback_query(F.data == "dead:leave_prompt")
 async def cb_dead_leave_prompt(
     callback: CallbackQuery,
@@ -1424,7 +1464,46 @@ async def cb_dead_leave_prompt(
     redis: Redis | None = None,
     lang: str = "ru",
 ) -> None:
-    """Prompt user for confirmation before mass leaving dead channels."""
+    """Prompt user to choose between 1-click mass unsubscribe or manual browsing."""
+    user = getattr(callback, "from_user", None)
+    user_id = user.id if user else 0
+    r = _get_redis(redis)
+    session_id = await _get_active_session_id(state, r, user_id)
+
+    if not session_id:
+        if callback.message:
+            await callback.message.answer(i18n.get_text("session_not_found", lang=lang))
+        await callback.answer()
+        return
+
+    scan_result = await ScannerService.get_cached_scan(r, session_id)
+    if not scan_result:
+        if callback.message:
+            await callback.message.answer(i18n.get_text("session_not_found", lang=lang))
+        await callback.answer()
+        return
+
+    dead_dialogs = _get_target_dead_dialogs(scan_result)
+    dead_total = len(dead_dialogs)
+    text = i18n.get_text("dead_choice_prompt", lang=lang, count=dead_total)
+    kb = get_dead_choice_kb(dead_total, lang=lang)
+
+    if callback.message:
+        try:
+            await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            await callback.message.answer(text, reply_markup=kb, parse_mode="Markdown")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "dead:all_prompt")
+async def cb_dead_all_prompt(
+    callback: CallbackQuery,
+    state: FSMContext,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Show confirmation warning before 1-click mass unsubscribe."""
     user = getattr(callback, "from_user", None)
     user_id = user.id if user else 0
     r = _get_redis(redis)
@@ -1453,6 +1532,234 @@ async def cb_dead_leave_prompt(
         except Exception:
             await callback.message.answer(text, reply_markup=kb, parse_mode="Markdown")
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith("dead:browse:"))
+async def cb_dead_browse(
+    callback: CallbackQuery,
+    state: FSMContext,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Enter interactive dead channels browser."""
+    page_str = (callback.data or "dead:browse:0").split(":")[-1]
+    page = int(page_str) if page_str.isdigit() else 0
+
+    user = getattr(callback, "from_user", None)
+    user_id = user.id if user else 0
+    r = _get_redis(redis)
+    session_id = await _get_active_session_id(state, r, user_id)
+
+    if not session_id:
+        if callback.message:
+            await callback.message.answer(i18n.get_text("session_not_found", lang=lang))
+        await callback.answer()
+        return
+
+    scan_result = await ScannerService.get_cached_scan(r, session_id)
+    if not scan_result:
+        if callback.message:
+            await callback.message.answer(i18n.get_text("session_not_found", lang=lang))
+        await callback.answer()
+        return
+
+    dead_dialogs = _get_target_dead_dialogs(scan_result)
+    data = await state.get_data()
+    selected_dead_ids = data.get("selected_dead_ids")
+
+    if selected_dead_ids is None:
+        selected_dead_ids = [d.id for d in dead_dialogs]
+
+    selected_set = set(selected_dead_ids)
+    await state.set_state(AppSG.browsing_dead_channels)
+    await state.update_data(selected_dead_ids=list(selected_set))
+
+    text, kb = _render_dead_browse_view(dead_dialogs, selected_set, page, lang)
+
+    if callback.message:
+        try:
+            await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            await callback.message.answer(text, reply_markup=kb, parse_mode="Markdown")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("dead:toggle:"))
+async def cb_dead_toggle(
+    callback: CallbackQuery,
+    state: FSMContext,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Toggle selection checkbox for a specific dead channel."""
+    parts = (callback.data or "").split(":")
+    if len(parts) < 4:
+        await callback.answer()
+        return
+    dialog_id = int(parts[2])
+    page = int(parts[3])
+
+    user = getattr(callback, "from_user", None)
+    user_id = user.id if user else 0
+    r = _get_redis(redis)
+    session_id = await _get_active_session_id(state, r, user_id)
+    if not session_id:
+        await callback.answer()
+        return
+
+    scan_result = await ScannerService.get_cached_scan(r, session_id)
+    if not scan_result:
+        await callback.answer()
+        return
+
+    dead_dialogs = _get_target_dead_dialogs(scan_result)
+    data = await state.get_data()
+    selected_dead_ids = data.get("selected_dead_ids")
+    if selected_dead_ids is None:
+        selected_dead_ids = [d.id for d in dead_dialogs]
+
+    selected_set = set(selected_dead_ids)
+    if dialog_id in selected_set:
+        selected_set.remove(dialog_id)
+    else:
+        selected_set.add(dialog_id)
+
+    await state.update_data(selected_dead_ids=list(selected_set))
+    text, kb = _render_dead_browse_view(dead_dialogs, selected_set, page, lang)
+
+    if callback.message:
+        try:
+            await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            pass
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("dead:page:"))
+async def cb_dead_page(
+    callback: CallbackQuery,
+    state: FSMContext,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Navigate between pages in dead channels browser."""
+    parts = (callback.data or "").split(":")
+    page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+
+    user = getattr(callback, "from_user", None)
+    user_id = user.id if user else 0
+    r = _get_redis(redis)
+    session_id = await _get_active_session_id(state, r, user_id)
+    if not session_id:
+        await callback.answer()
+        return
+
+    scan_result = await ScannerService.get_cached_scan(r, session_id)
+    if not scan_result:
+        await callback.answer()
+        return
+
+    dead_dialogs = _get_target_dead_dialogs(scan_result)
+    data = await state.get_data()
+    selected_dead_ids = data.get("selected_dead_ids")
+    if selected_dead_ids is None:
+        selected_dead_ids = [d.id for d in dead_dialogs]
+
+    selected_set = set(selected_dead_ids)
+    text, kb = _render_dead_browse_view(dead_dialogs, selected_set, page, lang)
+
+    if callback.message:
+        try:
+            await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            pass
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("dead:select_page:"))
+@router.callback_query(F.data.startswith("dead:deselect_page:"))
+async def cb_dead_page_bulk_selection(
+    callback: CallbackQuery,
+    state: FSMContext,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Bulk select or deselect all dead channels on the current page."""
+    action = callback.data or ""
+    is_select = action.startswith("dead:select_page:")
+    parts = action.split(":")
+    page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+
+    user = getattr(callback, "from_user", None)
+    user_id = user.id if user else 0
+    r = _get_redis(redis)
+    session_id = await _get_active_session_id(state, r, user_id)
+    if not session_id:
+        await callback.answer()
+        return
+
+    scan_result = await ScannerService.get_cached_scan(r, session_id)
+    if not scan_result:
+        await callback.answer()
+        return
+
+    dead_dialogs = _get_target_dead_dialogs(scan_result)
+    data = await state.get_data()
+    selected_dead_ids = data.get("selected_dead_ids")
+    if selected_dead_ids is None:
+        selected_dead_ids = [d.id for d in dead_dialogs]
+
+    selected_set = set(selected_dead_ids)
+    per_page = 8
+    page_dialogs = dead_dialogs[page * per_page : (page + 1) * per_page]
+
+    for d in page_dialogs:
+        if is_select:
+            selected_set.add(d.id)
+        else:
+            selected_set.discard(d.id)
+
+    await state.update_data(selected_dead_ids=list(selected_set))
+    text, kb = _render_dead_browse_view(dead_dialogs, selected_set, page, lang)
+
+    if callback.message:
+        try:
+            await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            pass
+    await callback.answer()
+
+
+@router.callback_query(F.data == "dead:noop")
+async def cb_dead_noop(callback: CallbackQuery) -> None:
+    """No-op callback for page indicator."""
+    await callback.answer()
+
+
+@router.callback_query(F.data == "dead:confirm_selected")
+async def cb_dead_confirm_selected(
+    callback: CallbackQuery,
+    state: FSMContext,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Execute mass leave for selectively chosen dead channels."""
+    data = await state.get_data()
+    selected_dead_ids = data.get("selected_dead_ids", [])
+    if not selected_dead_ids:
+        await callback.answer(
+            i18n.get_text("dead_none_selected_alert", lang=lang),
+            show_alert=True,
+        )
+        return
+
+    await _execute_mass_leave_channels(
+        callback=callback,
+        state=state,
+        redis=redis,
+        lang=lang,
+        selected_ids=set(selected_dead_ids),
+    )
 
 
 @router.callback_query(F.data == "dead:cancel")
@@ -1511,7 +1818,24 @@ async def cb_dead_confirm_leave(
     redis: Redis | None = None,
     lang: str = "ru",
 ) -> None:
-    """Execute mass unsubscribe from dead and zombie channels."""
+    """Execute 1-click mass unsubscribe from all dead channels."""
+    await _execute_mass_leave_channels(
+        callback=callback,
+        state=state,
+        redis=redis,
+        lang=lang,
+        selected_ids=None,
+    )
+
+
+async def _execute_mass_leave_channels(
+    callback: CallbackQuery,
+    state: FSMContext,
+    redis: Redis | None,
+    lang: str,
+    selected_ids: set[int] | None = None,
+) -> None:
+    """Shared execution logic for mass unsubscribe from dead channels."""
     user = getattr(callback, "from_user", None)
     user_id = user.id if user else 0
     r = _get_redis(redis)
@@ -1575,6 +1899,7 @@ async def cb_dead_confirm_leave(
                 peer_map=peer_map,
                 progress_callback=on_leave_progress,
                 session_id=session_id,
+                selected_ids=selected_ids,
             )
 
             # Update cached scan_result in Redis
@@ -1583,6 +1908,7 @@ async def cb_dead_confirm_leave(
                 for d in scan_result.dialogs
                 if d.status in (ChatStatus.DEAD, ChatStatus.ZOMBIE)
                 and d.type in (ChatType.CHANNEL, ChatType.GROUP)
+                and (selected_ids is None or d.id in selected_ids)
             }
             scan_result.dialogs = [
                 d for d in scan_result.dialogs if d.id not in left_dialog_ids
