@@ -28,7 +28,10 @@ from app.bot.keyboards import (
     get_clean_completed_kb,
     get_diagnostic_kb,
     get_feedback_rating_kb,
+    get_folder_actions_kb,
+    get_folder_delete_confirm_kb,
     get_folder_selection_kb,
+    get_folders_list_kb,
     get_language_kb,
     get_phone_auth_kb,
     get_scan_kb,
@@ -37,7 +40,7 @@ from app.bot.keyboards import (
     get_start_kb,
     get_wrapped_kb,
 )
-from app.bot.states import AppSG, AuthSG, FeedbackSG
+from app.bot.states import AppSG, AuthSG, FeedbackSG, FolderManagerSG
 from app.bot.utils import ThrottledMessageEditor
 from app.cleaner.schemas import CleanConfig
 from app.cleaner.service import CleanerService, get_smart_folder_presets
@@ -989,15 +992,22 @@ async def cb_run_clean_folders_only(
     lang: str = "ru",
 ) -> None:
     """Show interactive folder selection menu before creating folders."""
+    r = _get_redis(redis)
     data = await state.get_data()
     session_id = data.get("session_id")
+    if not session_id:
+        user = getattr(callback, "from_user", None)
+        user_id = user.id if user else 0
+        session_id = await _get_active_session_id(state, r, user_id)
+        if session_id:
+            await state.update_data(session_id=session_id)
+
     if not session_id:
         if callback.message:
             await callback.message.answer(i18n.get_text("session_not_found", lang=lang))
         await callback.answer()
         return
 
-    r = _get_redis(redis)
     scan_result = await ScannerService.get_cached_scan(r, session_id)
     if not scan_result:
         if callback.message:
@@ -1767,4 +1777,414 @@ async def cb_skip_comment(
                 parse_mode="Markdown",
             )
     await callback.answer()
+
+
+# --- J. Interactive Folder Manager Handlers ---
+
+
+@router.callback_query(F.data == "folder_mgr:list")
+async def cb_folder_mgr_list(
+    callback: CallbackQuery,
+    state: FSMContext,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Display interactive list of user Telegram folders."""
+    user = getattr(callback, "from_user", None)
+    user_id = user.id if user else 0
+    r = _get_redis(redis)
+    session_id = await _get_active_session_id(state, r, user_id)
+    if not session_id:
+        if callback.message:
+            await callback.message.answer(
+                i18n.get_text("folder_mgr_no_session", lang=lang),
+                parse_mode="Markdown",
+            )
+        await callback.answer()
+        return
+
+    session_store = SessionStore(r)
+    client = await session_store.load(session_id)
+    if not client:
+        if callback.message:
+            await callback.message.answer(
+                i18n.get_text("session_not_found", lang=lang),
+                parse_mode="Markdown",
+            )
+        await callback.answer()
+        return
+
+    try:
+        if not client.is_connected():
+            await client.connect()
+        cleaner = CleanerService()
+        folders = await cleaner.get_user_folders(client)
+    except Exception as e:
+        logger.exception("Failed to get user folders: %s", e)
+        if callback.message:
+            await callback.message.answer(f"❌ {e}")
+        await callback.answer()
+        return
+    finally:
+        if client and client.is_connected():
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+
+    await state.set_state(FolderManagerSG.viewing_list)
+    text = i18n.get_text("folder_mgr_title", lang=lang, count=len(folders))
+    kb = get_folders_list_kb(folders, lang=lang)
+
+    if callback.message:
+        try:
+            await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            await callback.message.answer(text, reply_markup=kb, parse_mode="Markdown")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("folder_mgr:view:"))
+async def cb_folder_mgr_view(
+    callback: CallbackQuery,
+    state: FSMContext,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """View details and actions for a single folder."""
+    folder_id_str = (callback.data or "").split(":", 2)[2]
+    try:
+        folder_id = int(folder_id_str)
+    except ValueError:
+        await callback.answer()
+        return
+
+    user = getattr(callback, "from_user", None)
+    user_id = user.id if user else 0
+    r = _get_redis(redis)
+    session_id = await _get_active_session_id(state, r, user_id)
+    if not session_id:
+        if callback.message:
+            await callback.message.answer(
+                i18n.get_text("folder_mgr_no_session", lang=lang),
+                parse_mode="Markdown",
+            )
+        await callback.answer()
+        return
+
+    session_store = SessionStore(r)
+    client = await session_store.load(session_id)
+    if not client:
+        if callback.message:
+            await callback.message.answer(
+                i18n.get_text("session_not_found", lang=lang),
+                parse_mode="Markdown",
+            )
+        await callback.answer()
+        return
+
+    try:
+        if not client.is_connected():
+            await client.connect()
+        cleaner = CleanerService()
+        folders = await cleaner.get_user_folders(client)
+    except Exception as e:
+        logger.exception("Failed to get folder details: %s", e)
+        if callback.message:
+            await callback.message.answer(f"❌ {e}")
+        await callback.answer()
+        return
+    finally:
+        if client and client.is_connected():
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+
+    target = next((f for f in folders if f.id == folder_id), None)
+    if not target:
+        if callback.message:
+            await callback.message.answer(
+                i18n.get_text("folder_not_found", lang=lang),
+                parse_mode="Markdown",
+            )
+        await callback.answer()
+        return
+
+    await state.set_state(FolderManagerSG.viewing_folder)
+    await state.update_data(
+        folder_id=target.id,
+        folder_title=target.title,
+        folder_chats_count=target.chats_count,
+    )
+
+    text = i18n.get_text(
+        "folder_view_info",
+        lang=lang,
+        title=target.title,
+        chats_count=target.chats_count,
+    )
+    kb = get_folder_actions_kb(target.id, lang=lang)
+
+    if callback.message:
+        try:
+            await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            await callback.message.answer(text, reply_markup=kb, parse_mode="Markdown")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("folder_mgr:rename:"))
+async def cb_folder_mgr_rename_prompt(
+    callback: CallbackQuery,
+    state: FSMContext,
+    lang: str = "ru",
+) -> None:
+    """Prompt user to enter a new name for the folder."""
+    folder_id_str = (callback.data or "").split(":", 2)[2]
+    try:
+        folder_id = int(folder_id_str)
+    except ValueError:
+        await callback.answer()
+        return
+
+    await state.set_state(FolderManagerSG.waiting_rename_input)
+    await state.update_data(rename_folder_id=folder_id)
+
+    prompt_text = i18n.get_text("folder_rename_prompt", lang=lang)
+    if callback.message:
+        await callback.message.answer(prompt_text, parse_mode="Markdown")
+    await callback.answer()
+
+
+@router.message(FolderManagerSG.waiting_rename_input)
+async def msg_folder_mgr_rename_input(
+    message: Message,
+    state: FSMContext,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Process new folder name input with strict <= 12 characters validation."""
+    new_title = (message.text or "").strip()
+    if len(new_title) > 12:
+        too_long_text = i18n.get_text("folder_rename_too_long", lang=lang, len=len(new_title))
+        await message.answer(too_long_text, parse_mode="Markdown")
+        return
+
+    if not new_title:
+        prompt_text = i18n.get_text("folder_rename_prompt", lang=lang)
+        await message.answer(prompt_text, parse_mode="Markdown")
+        return
+
+    data = await state.get_data()
+    folder_id = data.get("rename_folder_id")
+    if not folder_id:
+        await state.clear()
+        return
+
+    user = getattr(message, "from_user", None)
+    user_id = user.id if user else 0
+    r = _get_redis(redis)
+    session_id = await _get_active_session_id(state, r, user_id)
+    if not session_id:
+        await message.answer(
+            i18n.get_text("folder_mgr_no_session", lang=lang),
+            parse_mode="Markdown",
+        )
+        await state.clear()
+        return
+
+    session_store = SessionStore(r)
+    client = await session_store.load(session_id)
+    if not client:
+        await message.answer(
+            i18n.get_text("session_not_found", lang=lang),
+            parse_mode="Markdown",
+        )
+        await state.clear()
+        return
+
+    try:
+        if not client.is_connected():
+            await client.connect()
+        cleaner = CleanerService()
+        renamed = await cleaner.rename_folder(client, folder_id=folder_id, new_title=new_title)
+        folders = await cleaner.get_user_folders(client)
+    except Exception as e:
+        logger.exception("Failed to rename folder: %s", e)
+        await message.answer(f"❌ {e}")
+        return
+    finally:
+        if client and client.is_connected():
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+
+    await state.set_state(FolderManagerSG.viewing_list)
+    success_msg = i18n.get_text(
+        "folder_rename_success",
+        lang=lang,
+        title=renamed.title if renamed else new_title,
+    )
+    list_title = i18n.get_text("folder_mgr_title", lang=lang, count=len(folders))
+    kb = get_folders_list_kb(folders, lang=lang)
+
+    await message.answer(
+        f"{success_msg}\n\n{list_title}",
+        reply_markup=kb,
+        parse_mode="Markdown",
+    )
+
+
+@router.callback_query(F.data.startswith("folder_mgr:delete_prompt:"))
+async def cb_folder_mgr_delete_prompt(
+    callback: CallbackQuery,
+    state: FSMContext,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Prompt user with a confirmation warning before deleting a folder."""
+    folder_id_str = (callback.data or "").split(":", 2)[2]
+    try:
+        folder_id = int(folder_id_str)
+    except ValueError:
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    folder_title = data.get("folder_title", "")
+
+    if not folder_title:
+        user = getattr(callback, "from_user", None)
+        user_id = user.id if user else 0
+        r = _get_redis(redis)
+        session_id = await _get_active_session_id(state, r, user_id)
+        if session_id:
+            session_store = SessionStore(r)
+            client = await session_store.load(session_id)
+            if client:
+                try:
+                    if not client.is_connected():
+                        await client.connect()
+                    cleaner = CleanerService()
+                    folders = await cleaner.get_user_folders(client)
+                    target = next((f for f in folders if f.id == folder_id), None)
+                    if target:
+                        folder_title = target.title
+                except Exception:
+                    pass
+                finally:
+                    if client and client.is_connected():
+                        try:
+                            await client.disconnect()
+                        except Exception:
+                            pass
+
+    await state.set_state(FolderManagerSG.confirm_delete)
+    await state.update_data(delete_folder_id=folder_id)
+
+    warn_text = i18n.get_text(
+        "folder_delete_warn",
+        lang=lang,
+        title=folder_title or f"#{folder_id}",
+    )
+    kb = get_folder_delete_confirm_kb(folder_id, lang=lang)
+
+    if callback.message:
+        try:
+            await callback.message.edit_text(warn_text, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            await callback.message.answer(warn_text, reply_markup=kb, parse_mode="Markdown")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("folder_mgr:confirm_delete:"))
+async def cb_folder_mgr_confirm_delete(
+    callback: CallbackQuery,
+    state: FSMContext,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Delete folder filter and refresh folder list."""
+    folder_id_str = (callback.data or "").split(":", 2)[2]
+    try:
+        folder_id = int(folder_id_str)
+    except ValueError:
+        await callback.answer()
+        return
+
+    user = getattr(callback, "from_user", None)
+    user_id = user.id if user else 0
+    r = _get_redis(redis)
+    session_id = await _get_active_session_id(state, r, user_id)
+    if not session_id:
+        if callback.message:
+            await callback.message.answer(
+                i18n.get_text("folder_mgr_no_session", lang=lang),
+                parse_mode="Markdown",
+            )
+        await callback.answer()
+        return
+
+    session_store = SessionStore(r)
+    client = await session_store.load(session_id)
+    if not client:
+        if callback.message:
+            await callback.message.answer(
+                i18n.get_text("session_not_found", lang=lang),
+                parse_mode="Markdown",
+            )
+        await callback.answer()
+        return
+
+    try:
+        if not client.is_connected():
+            await client.connect()
+        cleaner = CleanerService()
+        await cleaner.delete_folder(client, folder_id=folder_id)
+        folders = await cleaner.get_user_folders(client)
+    except Exception as e:
+        logger.exception("Failed to delete folder: %s", e)
+        if callback.message:
+            await callback.message.answer(f"❌ {e}")
+        await callback.answer()
+        return
+    finally:
+        if client and client.is_connected():
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+
+    await state.set_state(FolderManagerSG.viewing_list)
+    del_success_text = i18n.get_text("folder_delete_success", lang=lang)
+    list_title = i18n.get_text("folder_mgr_title", lang=lang, count=len(folders))
+    kb = get_folders_list_kb(folders, lang=lang)
+
+    if callback.message:
+        try:
+            await callback.message.edit_text(
+                f"{del_success_text}\n\n{list_title}",
+                reply_markup=kb,
+                parse_mode="Markdown",
+            )
+        except Exception:
+            await callback.message.answer(
+                f"{del_success_text}\n\n{list_title}",
+                reply_markup=kb,
+                parse_mode="Markdown",
+            )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "folder_mgr:add_preset")
+async def cb_folder_mgr_add_preset(
+    callback: CallbackQuery,
+    state: FSMContext,
+    redis: Redis | None = None,
+    lang: str = "ru",
+) -> None:
+    """Route to smart folder presets selection."""
+    await cb_run_clean_folders_only(callback, state, redis, lang=lang)
 

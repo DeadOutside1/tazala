@@ -15,6 +15,15 @@ class CleanStep(StrEnum):
     COMPLETED = "completed"
 
 
+class UserFolderInfo(BaseModel):
+    """Information about an existing Telegram dialog folder."""
+
+    id: int
+    title: str
+    emoticon: str | None = None
+    chats_count: int = 0
+
+
 class FolderRule(BaseModel):
     """Definition of a smart folder categorization rule."""
 

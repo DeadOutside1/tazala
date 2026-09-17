@@ -9,7 +9,7 @@ from aiogram.types import (
 )
 
 from app.bot.i18n.manager import i18n
-from app.cleaner.schemas import FolderRule
+from app.cleaner.schemas import FolderRule, UserFolderInfo
 
 
 def get_main_menu_reply_kb(lang: str = "ru") -> ReplyKeyboardMarkup:
@@ -78,6 +78,12 @@ def get_start_kb(
             ],
             [
                 InlineKeyboardButton(
+                    text=i18n.get_text("btn_folder_manager", lang=lang),
+                    callback_data="folder_mgr:list",
+                )
+            ],
+            [
+                InlineKeyboardButton(
                     text=i18n.get_text("btn_leave_feedback", lang=lang),
                     callback_data="leave_feedback",
                 )
@@ -114,6 +120,12 @@ def get_start_kb(
             InlineKeyboardButton(
                 text=i18n.get_text("btn_phone_auth", lang=lang),
                 callback_data="start_phone_auth",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=i18n.get_text("btn_folder_manager", lang=lang),
+                callback_data="folder_mgr:list",
             )
         ],
         [
@@ -453,4 +465,84 @@ def get_admin_kb(lang: str = "ru") -> InlineKeyboardMarkup:
             ],
         ]
     )
+
+
+def get_folders_list_kb(
+    folders: list[UserFolderInfo],
+    lang: str = "ru",
+) -> InlineKeyboardMarkup:
+    """Keyboard displaying list of all user Telegram folders and action buttons."""
+    rows: list[list[InlineKeyboardButton]] = []
+    for f in folders:
+        rows.append([
+            InlineKeyboardButton(
+                text=f"📂 {f.title} ({f.chats_count})",
+                callback_data=f"folder_mgr:view:{f.id}",
+            )
+        ])
+
+    rows.append([
+        InlineKeyboardButton(
+            text=i18n.get_text("btn_add_smart_folder", lang=lang),
+            callback_data="folder_mgr:add_preset",
+        ),
+        InlineKeyboardButton(
+            text=i18n.get_text("btn_main_menu", lang=lang),
+            callback_data="back_to_start",
+        ),
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def get_folder_actions_kb(
+    folder_id: int,
+    lang: str = "ru",
+) -> InlineKeyboardMarkup:
+    """Actions for a specific folder: rename, delete, back."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_rename_folder", lang=lang),
+                    callback_data=f"folder_mgr:rename:{folder_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_delete_folder", lang=lang),
+                    callback_data=f"folder_mgr:delete_prompt:{folder_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_back_to_folders", lang=lang),
+                    callback_data="folder_mgr:list",
+                )
+            ],
+        ]
+    )
+
+
+def get_folder_delete_confirm_kb(
+    folder_id: int,
+    lang: str = "ru",
+) -> InlineKeyboardMarkup:
+    """Confirmation prompt before deleting a dialog folder."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_confirm_delete", lang=lang),
+                    callback_data=f"folder_mgr:confirm_delete:{folder_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get_text("btn_cancel", lang=lang),
+                    callback_data=f"folder_mgr:view:{folder_id}",
+                )
+            ],
+        ]
+    )
+
 

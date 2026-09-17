@@ -67,14 +67,18 @@ def test_format_code_slots():
 
 
 def test_start_keyboard_structure():
-    """Test get_start_kb contains auth, feedback, security, and language selection buttons."""
+    """
+    Test get_start_kb contains auth, folder manager, feedback,
+    security, and language selection buttons.
+    """
     kb = get_start_kb()
-    assert len(kb.inline_keyboard) == 5
+    assert len(kb.inline_keyboard) == 6
     assert kb.inline_keyboard[0][0].callback_data == "start_auth"
     assert kb.inline_keyboard[1][0].callback_data == "start_phone_auth"
-    assert kb.inline_keyboard[2][0].callback_data == "leave_feedback"
-    assert kb.inline_keyboard[3][0].callback_data == "about_security"
-    assert kb.inline_keyboard[4][0].callback_data == "choose_lang"
+    assert kb.inline_keyboard[2][0].callback_data == "folder_mgr:list"
+    assert kb.inline_keyboard[3][0].callback_data == "leave_feedback"
+    assert kb.inline_keyboard[4][0].callback_data == "about_security"
+    assert kb.inline_keyboard[5][0].callback_data == "choose_lang"
 
 
 
@@ -122,11 +126,12 @@ def test_clean_completed_keyboard_structure():
 def test_start_keyboard_active_session():
     """Test get_start_kb displays active session buttons when has_active_session=True."""
     kb = get_start_kb(has_active_session=True)
-    assert len(kb.inline_keyboard) == 6
+    assert len(kb.inline_keyboard) == 7
     assert kb.inline_keyboard[0][0].callback_data == "run_scan"
     assert kb.inline_keyboard[1][0].callback_data == "run_clean:folders_only"
-    assert kb.inline_keyboard[2][0].callback_data == "leave_feedback"
-    assert kb.inline_keyboard[3][0].callback_data == "session_logout"
+    assert kb.inline_keyboard[2][0].callback_data == "folder_mgr:list"
+    assert kb.inline_keyboard[3][0].callback_data == "leave_feedback"
+    assert kb.inline_keyboard[4][0].callback_data == "session_logout"
 
 
 def test_start_keyboard_admin_visibility():

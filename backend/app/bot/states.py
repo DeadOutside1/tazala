@@ -29,3 +29,13 @@ class FeedbackSG(StatesGroup):
     waiting_rating = State()
     waiting_comment = State()
 
+
+class FolderManagerSG(StatesGroup):
+    """Telegram folder manager state group."""
+
+    viewing_list = State()
+    viewing_folder = State()
+    waiting_rename_input = State()
+    confirm_delete = State()
+
+

@@ -770,6 +770,155 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "Your review helps us make Tazala even better."
         ),
     },
+    "btn_folder_manager": {
+        "ru": "📁 Мои папки",
+        "kk": "📁 Менің бумаларым",
+        "en": "📁 My Folders",
+    },
+    "btn_add_smart_folder": {
+        "ru": "✨ Создать умные папки",
+        "kk": "✨ Ақылды бумалар жасау",
+        "en": "✨ Create Smart Folders",
+    },
+    "btn_rename_folder": {
+        "ru": "✏️ Переименовать папку",
+        "kk": "✏️ Бума атауын өзгерту",
+        "en": "✏️ Rename Folder",
+    },
+    "btn_delete_folder": {
+        "ru": "🗑️ Удалить папку",
+        "kk": "🗑️ Буманы жою",
+        "en": "🗑️ Delete Folder",
+    },
+    "btn_confirm_delete": {
+        "ru": "🗑️ Да, удалить папку",
+        "kk": "🗑️ Иә, буманы жою",
+        "en": "🗑️ Yes, delete folder",
+    },
+    "btn_cancel": {
+        "ru": "❌ Отмена",
+        "kk": "❌ Бас тарту",
+        "en": "❌ Cancel",
+    },
+    "btn_back_to_folders": {
+        "ru": "🔙 Назад к папкам",
+        "kk": "🔙 Бумаларға оралу",
+        "en": "🔙 Back to Folders",
+    },
+    "folder_mgr_title": {
+        "ru": (
+            "📁 **Управление папками Telegram**\n\n"
+            "Всего папок: **{count}** из 10 (лимит Telegram).\n\n"
+            "Нажмите на нужную папку для просмотра, переименования или удаления:"
+        ),
+        "kk": (
+            "📁 **Telegram бумаларын басқару**\n\n"
+            "Барлық бума: **{count}** / 10 (Telegram шегі).\n\n"
+            "Көру, атауын өзгерту немесе жою үшін керекті буманы таңдаңыз:"
+        ),
+        "en": (
+            "📁 **Telegram Folder Manager**\n\n"
+            "Total folders: **{count}** of 10 (Telegram limit).\n\n"
+            "Click a folder to view, rename, or delete it:"
+        ),
+    },
+    "folder_view_info": {
+        "ru": (
+            "📂 **Папка: {title}**\n\n"
+            "💬 Количество чатов: **{chats_count}**\n\n"
+            "Выберите необходимое действие:"
+        ),
+        "kk": (
+            "📂 **Бума: {title}**\n\n"
+            "💬 Чаттар саны: **{chats_count}**\n\n"
+            "Қажетті әрекетті таңдаңыз:"
+        ),
+        "en": (
+            "📂 **Folder: {title}**\n\n"
+            "💬 Chats count: **{chats_count}**\n\n"
+            "Choose an action:"
+        ),
+    },
+    "folder_rename_prompt": {
+        "ru": (
+            "✏️ **Переименование папки**\n\n"
+            "Отправьте новое название для этой папки в ответном сообщении.\n\n"
+            "⚠️ *Максимум 12 символов (ограничение Telegram).*"
+        ),
+        "kk": (
+            "✏️ **Бума атауын өзгерту**\n\n"
+            "Осы бума үшін жаңа атауды хабарлама ретінде жіберіңіз.\n\n"
+            "⚠️ *Ең көбі 12 таңба (Telegram шектеуі).*"
+        ),
+        "en": (
+            "✏️ **Rename Folder**\n\n"
+            "Send the new folder name as a reply in this chat.\n\n"
+            "⚠️ *Maximum 12 characters (Telegram limit).*"
+        ),
+    },
+    "folder_rename_too_long": {
+        "ru": (
+            "❌ **Слишком длинное название!**\n\n"
+            "Вы ввели {len} символов. Telegram разрешает не более 12 символов в названии папки.\n"
+            "Пожалуйста, отправьте более короткое название:"
+        ),
+        "kk": (
+            "❌ **Атауы тым ұзын!**\n\n"
+            "Сіз {len} таңба енгіздіңіз. Telegram бума атауында ең көбі 12 таңбаға рұқсат береді.\n"
+            "Қысқарақ атау жіберіңіз:"
+        ),
+        "en": (
+            "❌ **Title too long!**\n\nYou entered {len} characters. "
+            "Telegram allows a maximum of 12 characters for folder names.\n"
+            "Please send a shorter title:"
+        ),
+    },
+    "folder_rename_success": {
+        "ru": "✅ Папка успешно переименована в **«{title}»**!",
+        "kk": "✅ Бума атауы сәтті **«{title}»** болып өзгертілді!",
+        "en": "✅ Folder successfully renamed to **«{title}»**!",
+    },
+    "folder_delete_warn": {
+        "ru": (
+            "⚠️ **Удаление папки «{title}»**\n\n"
+            "Вы действительно хотите удалить эту папку?\n\n"
+            "*Сами чаты и сообщения удалены НЕ будут — удалится только сама вкладка-папка.*"
+        ),
+        "kk": (
+            "⚠️ **«{title}» бумасын жою**\n\n"
+            "Бұл буманы шынымен жойғыңыз келе ме?\n\n"
+            "*Чаттар мен хабарламалар жойылмайды — тек бума қойындысы жойылады.*"
+        ),
+        "en": (
+            "⚠️ **Delete Folder «{title}»**\n\n"
+            "Are you sure you want to delete this folder?\n\n"
+            "*Chats and messages will NOT be deleted — only the folder tab will be removed.*"
+        ),
+    },
+    "folder_delete_success": {
+        "ru": "🗑️ Папка успешно удалена.",
+        "kk": "🗑️ Бума сәтті жойылды.",
+        "en": "🗑️ Folder successfully deleted.",
+    },
+    "folder_not_found": {
+        "ru": "❌ Папка не найдена или уже была удалена.",
+        "kk": "❌ Бума табылмады немесе әлдеқашан жойылған.",
+        "en": "❌ Folder not found or has already been deleted.",
+    },
+    "folder_mgr_no_session": {
+        "ru": (
+            "⚠️ Для управления папками необходимо авторизоваться в Telegram. "
+            "Пожалуйста, войдите через меню."
+        ),
+        "kk": (
+            "⚠️ Бумаларды басқару үшін Telegram-ға кіру қажет. "
+            "Басты мәзір арқылы кіріңіз."
+        ),
+        "en": (
+            "⚠️ You need to log in to Telegram to manage folders. "
+            "Please log in via the menu."
+        ),
+    },
 }
 
 

@@ -9,7 +9,14 @@ from telethon import TelegramClient
 from telethon.tl import types
 from telethon.tl.functions.messages import GetDialogFiltersRequest, UpdateDialogFilterRequest
 
-from app.cleaner.schemas import CleanConfig, CleanProgress, CleanResult, CleanStep, FolderRule
+from app.cleaner.schemas import (
+    CleanConfig,
+    CleanProgress,
+    CleanResult,
+    CleanStep,
+    FolderRule,
+    UserFolderInfo,
+)
 from app.scanner.schemas import ChatStatus, ChatType, DialogInfo, ScanResult
 from app.telegram.session_store import SessionStore
 from app.telegram.throttle import FloodSafeExecutor
@@ -508,3 +515,108 @@ class CleanerService:
             duration_seconds=duration,
             session_destroyed=session_destroyed,
         )
+
+    async def get_user_folders(self, client: TelegramClient) -> list[UserFolderInfo]:
+        """
+        Fetch all user-created dialog folders from Telegram account.
+        Filters out default non-custom tabs (id == 0 or DialogFilterDefault).
+        """
+        result = await client(GetDialogFiltersRequest())
+        if hasattr(result, "filters"):
+            raw_filters = result.filters
+        elif isinstance(result, list):
+            raw_filters = result
+        else:
+            raw_filters = []
+
+        user_folders: list[UserFolderInfo] = []
+        for f in raw_filters:
+            fid = getattr(f, "id", None)
+            if fid is None or fid == 0:
+                continue
+
+            title_attr = getattr(f, "title", None)
+            if title_attr is None:
+                continue
+            title_str = title_attr.text if hasattr(title_attr, "text") else str(title_attr)
+
+            emoticon = getattr(f, "emoticon", None)
+            include_peers = getattr(f, "include_peers", []) or []
+            pinned_peers = getattr(f, "pinned_peers", []) or []
+            chats_count = len(include_peers) + len(pinned_peers)
+
+            user_folders.append(
+                UserFolderInfo(
+                    id=int(fid),
+                    title=title_str,
+                    emoticon=emoticon,
+                    chats_count=chats_count,
+                )
+            )
+
+        return user_folders
+
+    async def rename_folder(
+        self,
+        client: TelegramClient,
+        folder_id: int,
+        new_title: str,
+    ) -> UserFolderInfo:
+        """
+        Rename an existing dialog folder strictly respecting the <=12 characters limit.
+        """
+        new_title = new_title.strip()
+        if len(new_title) > 12:
+            raise ValueError(
+                f"Folder title '{new_title}' exceeds 12 characters limit ({len(new_title)} chars)"
+            )
+
+        result = await client(GetDialogFiltersRequest())
+        if hasattr(result, "filters"):
+            raw_filters = result.filters
+        elif isinstance(result, list):
+            raw_filters = result
+        else:
+            raw_filters = []
+
+        target_filter = None
+        for f in raw_filters:
+            if getattr(f, "id", None) == folder_id:
+                target_filter = f
+                break
+
+        if not target_filter:
+            raise ValueError(f"Folder with id {folder_id} not found")
+
+        title_val = (
+            types.TextWithEntities(text=new_title, entities=[])
+            if hasattr(types, "TextWithEntities")
+            else new_title
+        )
+        target_filter.title = title_val
+
+        await FloodSafeExecutor.execute(
+            lambda: client(UpdateDialogFilterRequest(id=folder_id, filter=target_filter)),
+            default_delay=1.0,
+        )
+        logger.info("Successfully renamed folder %d to '%s'", folder_id, new_title)
+        include_peers = getattr(target_filter, "include_peers", []) or []
+        pinned_peers = getattr(target_filter, "pinned_peers", []) or []
+        return UserFolderInfo(
+            id=folder_id,
+            title=new_title,
+            emoticon=getattr(target_filter, "emoticon", None),
+            chats_count=len(include_peers) + len(pinned_peers),
+        )
+
+    async def delete_folder(self, client: TelegramClient, folder_id: int) -> bool:
+        """
+        Delete a dialog filter by passing filter=None to UpdateDialogFilterRequest.
+        Does NOT delete actual chats or messages.
+        """
+        await FloodSafeExecutor.execute(
+            lambda: client(UpdateDialogFilterRequest(id=folder_id, filter=None)),
+            default_delay=1.0,
+        )
+        logger.info("Successfully deleted folder %d", folder_id)
+        return True
